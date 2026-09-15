@@ -38,11 +38,11 @@ export const AnalysisLoadingModal: React.FC<AnalysisLoadingModalProps> = ({
                 Convening Product Jury
               </h3>
               <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 font-medium">
-                MOCK PIPELINE
+                MULTI-AGENT PIPELINE
               </span>
             </div>
             <p className="text-xs text-stone-500 dark:text-stone-400">
-              Running multi-agent analysis & cross-specialist evaluation...
+              Running server-side specialist deliberation & cross-agent synthesis...
             </p>
           </div>
         </div>
@@ -86,7 +86,7 @@ export const AnalysisLoadingModal: React.FC<AnalysisLoadingModalProps> = ({
         <div className="p-3 rounded-lg bg-stone-50 dark:bg-stone-800/40 border border-stone-200/80 dark:border-stone-800 text-[11px] text-stone-500 dark:text-stone-400 flex items-center gap-2">
           <Sparkles className="w-3.5 h-3.5 text-amber-500 shrink-0" />
           <span>
-            Simulating specialist deliberations between UX Research, PM, and Design Critic.
+            Real-time specialist deliberation between UX Researcher, Product Strategist, Evidence Auditor, and Jury Decision Agent.
           </span>
         </div>
       </div>

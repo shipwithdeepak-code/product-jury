@@ -92,18 +92,32 @@ export const ResultsView: React.FC<ResultsViewProps> = ({
         </div>
       </div>
 
-      {/* Mock Engine Disclaimer Notice */}
-      <div className="p-3 bg-stone-100 dark:bg-stone-850 rounded-lg border border-stone-200 dark:border-stone-800 text-xs text-stone-600 dark:text-stone-400 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <Sparkles className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-          <span>
-            <strong className="text-stone-800 dark:text-stone-200">Demonstration Mode:</strong> Multi-agent analysis simulated for UX Researcher, Product Manager, and Design Critic.
+      {/* Engine Status Banner */}
+      {review.isMock ? (
+        <div className="p-3 bg-stone-100 dark:bg-stone-850 rounded-lg border border-stone-200 dark:border-stone-800 text-xs text-stone-600 dark:text-stone-400 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Sparkles className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+            <span>
+              <strong className="text-stone-800 dark:text-stone-200">Demonstration Mode:</strong> Sample dossier evaluation simulated for UX Researcher, Product Manager, and Design Critic.
+            </span>
+          </div>
+          <span className="font-mono text-[10px] text-stone-500 bg-white dark:bg-stone-900 px-2 py-0.5 rounded border border-stone-200 dark:border-stone-800">
+            Dossier: Sample Dataset
           </span>
         </div>
-        <span className="font-mono text-[10px] text-stone-500 bg-white dark:bg-stone-900 px-2 py-0.5 rounded border border-stone-200 dark:border-stone-800">
-          Model: Mock Specialist Ensemble v0.1
-        </span>
-      </div>
+      ) : (
+        <div className="p-3 bg-emerald-50/70 dark:bg-emerald-950/30 rounded-lg border border-emerald-200/80 dark:border-emerald-800/60 text-xs text-emerald-900 dark:text-emerald-200 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+            <span>
+              <strong className="text-emerald-950 dark:text-emerald-100 font-semibold">Live Multi-Agent Deliberation:</strong> Real-time cross-examination by Gemini agents (UX Researcher, Product Strategist, Evidence Auditor, and Jury Decision Chair).
+            </span>
+          </div>
+          <span className="font-mono text-[10px] text-emerald-700 dark:text-emerald-300 bg-white/80 dark:bg-stone-900 px-2 py-0.5 rounded border border-emerald-300 dark:border-emerald-700">
+            Gemini Multimodal Multi-Agent v1.2
+          </span>
+        </div>
+      )}
 
       {/* Screen Artifact Drawer if toggled */}
       {showArtifactDrawer && review.context.screenshotUrl && (

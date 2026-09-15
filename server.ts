@@ -2,6 +2,7 @@ import express from 'express';
 import path from 'path';
 import { createServer as createViteServer } from 'vite';
 import { analyzeArtifactWithGemini, compareContextWithGemini } from './server/contextAnalystService';
+import { runProductJuryDeliberation } from './server/orchestrator';
 
 const PORT = 3000;
 
@@ -84,6 +85,36 @@ async function startServer() {
       return res.status(500).json({
         success: false,
         error: error?.message || 'Failed to compare context with Gemini.',
+      });
+    }
+  });
+
+  // Multimodal Multi-Agent Product Jury Deliberation
+  app.post('/api/jury/deliberate', async (req, res) => {
+    try {
+      const { context, rawEvidence } = req.body;
+
+      if (!context) {
+        return res.status(400).json({
+          success: false,
+          error: 'Missing required "context" field in deliberation payload.',
+        });
+      }
+
+      const review = await runProductJuryDeliberation({
+        context,
+        rawEvidence,
+      });
+
+      return res.json({
+        success: true,
+        data: review,
+      });
+    } catch (error: any) {
+      console.error('Server error in /api/jury/deliberate:', error);
+      return res.status(500).json({
+        success: false,
+        error: error?.message || 'Failed to execute multi-agent jury deliberation.',
       });
     }
   });

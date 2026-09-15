@@ -150,10 +150,86 @@ export interface ProductReview {
   agreementDisagreement: AgreementDisagreement;
   recommendedNextStep: string;
   isMock: boolean;
+  evidenceAudit?: EvidenceAuditResult;
 }
 
 export interface AnalysisProgressStep {
   id: string;
   label: string;
   status: 'pending' | 'active' | 'completed';
+}
+
+export interface UXResearchFriction {
+  friction: string;
+  severity: 'low' | 'medium' | 'high';
+  visualEvidence: string;
+}
+
+export interface UXResearchRisk {
+  risk: string;
+  severity: 'low' | 'medium' | 'high';
+  whyItMatters: string;
+}
+
+export interface AgentEvidenceItem {
+  claim: string;
+  status: EvidenceStatus;
+  source: string;
+}
+
+export interface UXResearchResult {
+  agentRole: 'UX_RESEARCHER';
+  summary: string;
+  strengths: string[];
+  frictions: UXResearchFriction[];
+  userRisks: UXResearchRisk[];
+  researchQuestions: string[];
+  recommendations: string[];
+  confidence: number;
+  evidenceItems: AgentEvidenceItem[];
+}
+
+export interface StrategicRisk {
+  risk: string;
+  severity: 'low' | 'medium' | 'high';
+  impact: string;
+}
+
+export interface ValueHypothesis {
+  hypothesis: string;
+  expectedPayoff: string;
+  validationStatus: 'UNVALIDATED' | 'PARTIALLY_VALIDATED' | 'VALIDATED';
+}
+
+export interface ProductStrategyResult {
+  agentRole: 'PRODUCT_MANAGER' | 'PRODUCT_STRATEGIST';
+  summary: string;
+  goalAlignment: {
+    isAligned: boolean;
+    score: number;
+    rationale: string;
+  };
+  strategicRisks: StrategicRisk[];
+  valueHypotheses: ValueHypothesis[];
+  validationNeeds: string[];
+  recommendations: string[];
+  confidence: number;
+  evidenceItems: AgentEvidenceItem[];
+}
+
+export interface EvidenceAuditResult {
+  agentRole: 'EVIDENCE_AUDITOR';
+  overallEvidenceQuality: 'STRONG' | 'MODERATE' | 'WEAK' | 'INSUFFICIENT';
+  verifiedFacts: string[];
+  supportedInferences: string[];
+  unsupportedAssumptions: string[];
+  criticalUnknowns: string[];
+  contradictions: string[];
+  auditWarnings: string[];
+  confidence: number;
+}
+
+export interface DeliberationInput {
+  context: ProductContext;
+  rawEvidence?: string;
 }
