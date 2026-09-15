@@ -1,0 +1,6 @@
+{
+  "name": "Product Jury",
+  "description": "AI-native product review and decision-support tool for Product Managers. Challenge the product. Defend the decision.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
