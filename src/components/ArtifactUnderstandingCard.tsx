@@ -185,33 +185,14 @@ export const ArtifactUnderstandingCard: React.FC<ArtifactUnderstandingCardProps>
         </div>
       )}
 
-      {/* High-demand / Capacity Spike Fallback Banner */}
-      {understanding.isCapacityFallback && !isAnalyzing && (
-        <div className="p-4 bg-amber-50 dark:bg-amber-950/40 border-b border-amber-200 dark:border-amber-900/60 flex items-start justify-between gap-3 text-xs text-amber-900 dark:text-amber-200">
-          <div className="flex items-start gap-2.5">
-            <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
-            <div>
-              <p className="font-semibold text-amber-950 dark:text-amber-100">
-                Gemini Upstream Demand Spike Handled Gracefully
-              </p>
-              <p className="text-amber-800 dark:text-amber-300 mt-0.5 leading-relaxed">
-                {understanding.fallbackNotice ||
-                  'Gemini API experienced a temporary peak demand spike (503). A structured epistemic starting draft was generated so your workflow continues uninterrupted. You can click "Retry with AI" at any time or review and adjust the facts and inferences below.'}
-              </p>
-            </div>
-          </div>
-          {onRetryAnalysis && (
-            <button
-              type="button"
-              onClick={onRetryAnalysis}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-medium shrink-0 transition-colors shadow-2xs cursor-pointer"
-            >
-              <RefreshCw className="w-3.5 h-3.5" />
-              <span>Retry with AI</span>
-            </button>
-          )}
-        </div>
-      )}
+      {/*
+        Stage 1 · The "Gemini Upstream Demand Spike Handled Gracefully" banner
+        that used to sit here is gone, along with the draft it announced.
+        PRD v1.1.1 §51 never-1 and never-2: a reading the model did not produce
+        is not shown, and a provider failure is reported as a failure rather
+        than dressed as a graceful continuation. The failure banner above is
+        now the only thing this card says when the read did not happen.
+      */}
 
       {/* Active Analyzing State Banner */}
       {isAnalyzing && (

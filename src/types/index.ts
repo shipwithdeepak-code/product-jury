@@ -58,8 +58,6 @@ export interface ContextAnalysisResponse {
   assumptions: DetailedAssumption[];
   unknowns: DetailedUnknown[];
   contextAlignment?: ContextAlignment;
-  isCapacityFallback?: boolean;
-  fallbackNotice?: string;
 }
 
 export interface ArtifactUnderstanding {
@@ -75,8 +73,6 @@ export interface ArtifactUnderstanding {
   isAnalyzedByGemini?: boolean;
   contextAlignment?: ContextAlignment;
   detailedAnalysis?: ContextAnalysisResponse;
-  isCapacityFallback?: boolean;
-  fallbackNotice?: string;
 }
 
 export interface ProductContext {
@@ -149,14 +145,93 @@ export interface ProductReview {
   agentReviews: AgentReview[];
   agreementDisagreement: AgreementDisagreement;
   recommendedNextStep: string;
-  isMock: boolean;
+  /** TR-8: true only for the labelled demonstration dossier. */
+  isSample: boolean;
   evidenceAudit?: EvidenceAuditResult;
 }
 
+/**
+ * Stage 1 · NFR-4. A step's status is only ever set from something the server
+ * reported. There is no timer that advances it.
+ */
 export interface AnalysisProgressStep {
   id: string;
   label: string;
-  status: 'pending' | 'active' | 'completed';
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'not_run';
+  /** For 'not_run' and 'failed': the real reason (NFR-6, TR-4). */
+  reason?: string;
+}
+
+/**
+ * Stage 1 · The three outcomes, FR-41.
+ *
+ * INSUFFICIENT is an epistemic outcome: the product ran and judged the evidence
+ * cannot carry a call. FAILED is a technical outcome: the product could not
+ * run. They render differently and neither is ever dressed as the other
+ * (TR-13, §51 never-9).
+ */
+export type RunOutcomeKind = 'VERDICT' | 'INSUFFICIENT' | 'FAILED';
+
+export interface MissingItem {
+  item: string;
+  whyItMatters: string;
+  howToGetIt: string;
+}
+
+export interface StageProvenance {
+  stage: string;
+  status: 'completed' | 'failed' | 'skipped' | 'not_run';
+  modelId?: string;
+  tier?: string;
+  attempts: number;
+  durationMs: number;
+  failureCode?: string;
+  reason?: string;
+}
+
+export interface RunProvenance {
+  runId: string;
+  startedAt: string;
+  finishedAt?: string;
+  stages: StageProvenance[];
+  /** §54.7: a tier with no evaluation behind it served this run. */
+  servedByUnevaluatedTier: boolean;
+  totalEstimatedCostCents: number;
+  totalProviderCalls: number;
+}
+
+export interface VerdictRun {
+  kind: 'VERDICT';
+  review: ProductReview;
+  provenance?: RunProvenance;
+}
+
+/** CAP-07. A complete outcome, not an error. */
+export interface InsufficientRun {
+  kind: 'INSUFFICIENT';
+  refusedAt: 'GATE' | 'CEILING';
+  /** FR-15: at least two. */
+  missing: MissingItem[];
+  provenance?: RunProvenance;
+}
+
+/** A technical failure. Never an epistemic statement about the evidence. */
+export interface FailedRun {
+  kind: 'FAILED';
+  code: string;
+  message: string;
+  retryable: boolean;
+  stage?: string;
+  provenance?: RunProvenance;
+}
+
+export type RunResult = VerdictRun | InsufficientRun | FailedRun;
+
+/** SR-8: an instruction found in supplied content, recorded not obeyed. */
+export interface EmbeddedInstructionObservation {
+  source: string;
+  kind: string;
+  observation: string;
 }
 
 export interface UXResearchFriction {

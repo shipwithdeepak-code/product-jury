@@ -2,12 +2,15 @@ import React from 'react';
 import { X, History, ArrowRight, Clock, FileCheck, Database } from 'lucide-react';
 import { ProductReview } from '../types';
 import { verdictConfigs } from './VerdictBadge';
+import { DELETION_DISCLOSURE } from '../integrity/disclosures';
 
 interface HistoryDrawerProps {
   isOpen: boolean;
   onClose: () => void;
   reviews: ProductReview[];
   onSelectReview: (review: ProductReview) => void;
+  /** PR-4: permanent deletion of everything this browser holds. */
+  onDeleteEverything?: () => void;
   activeReviewId?: string;
 }
 
@@ -16,8 +19,10 @@ export const HistoryDrawer: React.FC<HistoryDrawerProps> = ({
   onClose,
   reviews,
   onSelectReview,
+  onDeleteEverything,
   activeReviewId,
 }) => {
+  const [confirmingDelete, setConfirmingDelete] = React.useState(false);
   if (!isOpen) return null;
 
   return (
@@ -42,11 +47,20 @@ export const HistoryDrawer: React.FC<HistoryDrawerProps> = ({
           </button>
         </div>
 
-        {/* Persistence Notice */}
+        {/*
+          Stage 1 \u00b7 PR-5 and \u00a749's storage risk.
+
+          The previous text said persistent cloud sync "will be enabled in a
+          later release", which implied a plan the product does not have and
+          softened what is actually true. PR-5 asks for the limits of the
+          storage to be stated plainly before they bite.
+        */}
         <div className="p-3.5 mx-4 mt-4 rounded-lg bg-stone-50 dark:bg-stone-850 border border-stone-200 dark:border-stone-800 text-[11px] text-stone-600 dark:text-stone-400 flex items-start gap-2">
-          <Database className="w-4 h-4 text-stone-400 shrink-0 mt-0.5" />
+          <Database className="w-4 h-4 text-stone-400 shrink-0 mt-0.5" aria-hidden="true" />
           <p>
-            <span className="font-semibold text-stone-700 dark:text-stone-300">Session Storage:</span> Reviews are cached in-memory during this session. Persistent cloud database sync (Firestore/Cloud SQL) will be enabled in a later release.
+            <span className="font-semibold text-stone-700 dark:text-stone-300">Nothing is stored.</span>{' '}
+            Decisions live in this page only. Reloading, closing the tab, or opening this on another
+            device loses them, and there is no export yet.
           </p>
         </div>
 
@@ -110,6 +124,47 @@ export const HistoryDrawer: React.FC<HistoryDrawerProps> = ({
             })
           )}
         </div>
+
+        {/* PR-4 and TEL-9. */}
+        {onDeleteEverything && (
+          <div className="p-4 border-t border-stone-200 dark:border-stone-800">
+            {confirmingDelete ? (
+              <div className="space-y-2.5">
+                <p className="text-[11px] text-stone-600 dark:text-stone-400 leading-relaxed">
+                  {DELETION_DISCLOSURE}
+                </p>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onDeleteEverything();
+                      setConfirmingDelete(false);
+                      onClose();
+                    }}
+                    className="px-3 py-1.5 text-xs font-medium rounded-lg bg-rose-700 text-white hover:bg-rose-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-rose-500"
+                  >
+                    Delete everything
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setConfirmingDelete(false)}
+                    className="px-3 py-1.5 text-xs font-medium rounded-lg border border-stone-300 dark:border-stone-700 text-stone-700 dark:text-stone-200 hover:bg-stone-100 dark:hover:bg-stone-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-stone-500"
+                  >
+                    Keep them
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setConfirmingDelete(true)}
+                className="text-xs font-medium text-stone-600 dark:text-stone-400 hover:text-rose-700 dark:hover:text-rose-400 underline underline-offset-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-stone-500 rounded"
+              >
+                Delete everything this browser holds
+              </button>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

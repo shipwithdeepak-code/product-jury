@@ -1,171 +1,128 @@
-import { ProductReview, ProductContext, DeliberationInput } from '../src/types';
+import { ProductReview, ProductContext } from '../src/types';
 import { runUXResearcherAgent } from './agents/uxResearcherAgent';
 import { runProductStrategistAgent } from './agents/productStrategistAgent';
 import { runEvidenceAuditorAgent } from './agents/evidenceAuditorAgent';
 import { runJuryDecisionAgent } from './agents/juryDecisionAgent';
+import { ProductJuryError, isProductJuryError } from './integrity/errors';
+import { DecisionBudget } from './integrity/budget';
+import { RunRecorder } from './integrity/provenance';
+import { RunOutcome, failed, verdict } from './integrity/outcome';
+
+/**
+ * Stage 1 · The pipeline, rebuilt so that it can produce nothing.
+ *
+ * What was here before: `Promise.allSettled` over the two specialists, with a
+ * hand-written review substituted for either one that rejected; a hand-written
+ * audit substituted when the auditor threw; and a chair that, on failure,
+ * returned a complete fabricated verdict. The run always produced a verdict.
+ *
+ * What is here now:
+ *  - A failed specialist fails the run (CAP-05 failure state: "If both fail,
+ *    there is no verdict"; TR-5: "a missing specialist is never substituted").
+ *    Stage 1 takes the stricter reading and fails on either, because the
+ *    "panel shown as incomplete with confidence capped for that reason" half
+ *    of CAP-05 needs the binding ceiling, which is Stage 2. Failing closed is
+ *    the reversible choice; degrading is not.
+ *  - A failed audit fails the run (CAP-06: "If the audit cannot run, there is
+ *    no verdict").
+ *  - A failed chair fails the run (CAP-08: "If synthesis fails there is no
+ *    verdict and the decision says so").
+ *  - Every stage records which model served it, and every stage that did not
+ *    run is recorded as not run, with the real reason (TR-4).
+ *  - The run carries a budget ceiling (NFR-9).
+ *
+ * What is NOT here, and is Stage 2: the early sufficiency gate (CAP-18) and
+ * the binding ceiling (CAP-06's ceiling half). The stage list below records
+ * `gate` and `cross_examination` as `not_run` with the reason, rather than
+ * pretending the pipeline has six stages when it has four.
+ */
 
 export interface DeliberationOptions {
   context: ProductContext;
   rawEvidence?: string;
+  budget?: DecisionBudget;
+  recorder?: RunRecorder;
 }
 
-/**
- * Orchestrates the real server-side multi-agent Product Jury deliberation pipeline.
- *
- * DAG Execution:
- * Phase 1 (Parallel): UX Researcher Agent & Product Strategist Agent
- * Phase 2: Evidence Auditor Agent (examines claims from Context, UX, and Strategy)
- * Phase 3: Jury Decision Agent (synthesizes Verdict, confidence, opportunities, and trade-offs)
- */
 export async function runProductJuryDeliberation(
   options: DeliberationOptions
-): Promise<ProductReview> {
+): Promise<RunOutcome<ProductReview>> {
   const { context, rawEvidence } = options;
+  const budget = options.budget ?? new DecisionBudget();
+  const recorder = options.recorder ?? new RunRecorder();
 
-  if (!context) {
-    throw new Error('Missing required "context" payload for Product Jury deliberation.');
-  }
-
-  const artifactUnderstanding = context.artifactUnderstanding;
-  const contextAlignment = artifactUnderstanding?.contextAlignment;
-
-  console.log(
-    `[Orchestrator] Initiating multi-agent deliberation for: "${context.name || 'Unnamed Product'}" (Goal: ${
-      context.primaryGoal || 'None'
-    })`
+  // Stages this build does not have. Declared rather than omitted, so TR-4's
+  // "which stages ran and which did not" is answerable and honest.
+  recorder.notRun('gate', 'The early sufficiency gate (CAP-18) is not built in this stage.');
+  recorder.notRun(
+    'cross_examination',
+    'The cross-examination round (CAP-05) is not built in this stage; the lenses do not see each other.'
   );
+  recorder.notRun('red_team', 'The Red Team round (CAP-10) is not built in this stage.');
 
-  // --------------------------------------------------------------------------
-  // Phase 1: Parallel Specialist Panel Execution
-  // --------------------------------------------------------------------------
-  console.log('[Orchestrator] Phase 1: Launching UX Researcher and Product Strategist in parallel...');
-  const [uxResultSettled, strategyResultSettled] = await Promise.allSettled([
-    runUXResearcherAgent({
-      context,
-      rawEvidence,
-      artifactUnderstanding,
-    }),
-    runProductStrategistAgent({
-      context,
-      rawEvidence,
-      artifactUnderstanding,
-    }),
-  ]);
-
-  if (uxResultSettled.status === 'rejected') {
-    console.error('[Orchestrator] UX Researcher agent rejected unexpectedly:', uxResultSettled.reason);
-  }
-  if (strategyResultSettled.status === 'rejected') {
-    console.error('[Orchestrator] Product Strategist agent rejected unexpectedly:', strategyResultSettled.reason);
-  }
-
-  // Fallback resilience if any agent threw an uncaught error
-  const uxReview =
-    uxResultSettled.status === 'fulfilled'
-      ? uxResultSettled.value
-      : {
-          agentRole: 'UX_RESEARCHER' as const,
-          summary: 'UX review experienced degraded execution; proceed with caution.',
-          strengths: ['Basic layout structure visible'],
-          frictions: [
-            {
-              friction: 'Potential interface hesitation during initial setup.',
-              severity: 'medium' as const,
-              visualEvidence: 'Observable workflow controls',
-            },
-          ],
-          userRisks: [
-            {
-              risk: 'User cognitive overload from prerequisite fields.',
-              severity: 'medium' as const,
-              whyItMatters: 'Increases initial friction.',
-            },
-          ],
-          researchQuestions: ['Does the user understand the primary value prop within 3 minutes?'],
-          recommendations: ['Conduct usability testing on the initial session.'],
-          confidence: 50,
-          evidenceItems: [],
-        };
-
-  const strategyReview =
-    strategyResultSettled.status === 'fulfilled'
-      ? strategyResultSettled.value
-      : {
-          agentRole: 'PRODUCT_MANAGER' as const,
-          summary: 'Product strategy review experienced degraded execution; manual PM review advised.',
-          goalAlignment: {
-            isAligned: Boolean(context.primaryGoal),
-            score: 55,
-            rationale: 'Strategic alignment unverified due to agent execution error.',
-          },
-          strategicRisks: [
-            {
-              risk: 'Unvalidated product adoption risk.',
-              severity: 'medium' as const,
-              impact: 'May misallocate development focus.',
-            },
-          ],
-          valueHypotheses: [
-            {
-              hypothesis: 'Users will complete setup to reach the value payoff.',
-              expectedPayoff: 'Activation',
-              validationStatus: 'UNVALIDATED' as const,
-            },
-          ],
-          validationNeeds: ['Instrument activation telemetry.'],
-          recommendations: ['Prioritize rapid time-to-value.'],
-          confidence: 50,
-          evidenceItems: [],
-        };
-
-  // --------------------------------------------------------------------------
-  // Phase 2: Evidence Auditor Execution
-  // --------------------------------------------------------------------------
-  console.log('[Orchestrator] Phase 2: Launching Evidence Auditor to cross-examine claims...');
-  let evidenceAudit;
   try {
-    evidenceAudit = await runEvidenceAuditorAgent({
+    if (!context) {
+      throw new ProductJuryError('INVALID_REQUEST', { detail: { field: 'context' } });
+    }
+
+    const artifactUnderstanding = context.artifactUnderstanding;
+    const contextAlignment = artifactUnderstanding?.contextAlignment;
+
+    // Phase 1 — the two lenses. Run in parallel; either failing fails the run.
+    const [uxSettled, strategySettled] = await Promise.allSettled([
+      runUXResearcherAgent({ context, rawEvidence, artifactUnderstanding, budget, recorder }),
+      runProductStrategistAgent({ context, rawEvidence, artifactUnderstanding, budget, recorder }),
+    ]);
+
+    if (uxSettled.status === 'rejected' || strategySettled.status === 'rejected') {
+      const reason =
+        uxSettled.status === 'rejected' ? uxSettled.reason : (strategySettled as PromiseRejectedResult).reason;
+      const stage = uxSettled.status === 'rejected' ? 'specialist_ux' : 'specialist_strategy';
+
+      if (uxSettled.status === 'fulfilled') {
+        // Record that one lens did produce a position, so the failure report is
+        // accurate about what ran.
+        recorder.notRun('auditor', 'The panel was incomplete, so no audit was attempted.');
+      }
+      throw isProductJuryError(reason)
+        ? reason
+        : new ProductJuryError('STAGE_FAILED', { stage, cause: reason });
+    }
+
+    const uxReview = uxSettled.value;
+    const strategyReview = strategySettled.value;
+
+    // Phase 2 — the audit. No audit, no verdict (CAP-06).
+    const evidenceAudit = await runEvidenceAuditorAgent({
       context,
       artifactUnderstanding,
       uxReview,
       strategyReview,
       rawEvidence,
+      budget,
+      recorder,
     });
-  } catch (auditErr: any) {
-    console.error('[Orchestrator] Evidence Auditor failed:', auditErr);
-    evidenceAudit = {
-      agentRole: 'EVIDENCE_AUDITOR' as const,
-      overallEvidenceQuality: 'MODERATE' as const,
-      verifiedFacts: ['Interface provided in review context'],
-      supportedInferences: ['Workflow reflects product genre'],
-      unsupportedAssumptions: ['Behavioral conversion hypotheses remain unvalidated'],
-      criticalUnknowns: ['Drop-off analytics and quantitative telemetry'],
-      contradictions: [],
-      auditWarnings: ['Evidence Auditor operating in fallback mode.'],
-      confidence: 60,
-    };
+
+    // Phase 3 — the chair.
+    const review = await runJuryDecisionAgent({
+      context,
+      artifactUnderstanding,
+      contextAlignment,
+      uxReview,
+      strategyReview,
+      evidenceAudit,
+      rawEvidence,
+      budget,
+      recorder,
+      runId: recorder.id,
+    });
+
+    return verdict(review, recorder.snapshot());
+  } catch (error) {
+    // The single exit for every failure in this pipeline. There is deliberately
+    // no branch here that could produce INSUFFICIENT: a refusal requires a
+    // completed sufficiency assessment, and a thrown error is not one
+    // (TR-13, §51 never-9).
+    return failed(error, recorder.snapshot());
   }
-
-  // --------------------------------------------------------------------------
-  // Phase 3: Jury Decision Synthesis
-  // --------------------------------------------------------------------------
-  console.log('[Orchestrator] Phase 3: Launching Jury Decision Agent to synthesize binding verdict...');
-  const finalReview = await runJuryDecisionAgent({
-    context,
-    artifactUnderstanding,
-    contextAlignment,
-    uxReview,
-    strategyReview,
-    evidenceAudit,
-    rawEvidence,
-  });
-
-  // Explicitly ensure isMock is false
-  finalReview.isMock = false;
-
-  console.log(
-    `[Orchestrator] Deliberation complete! Verdict: ${finalReview.verdict} (Confidence: ${finalReview.confidenceScore}%)`
-  );
-
-  return finalReview;
 }

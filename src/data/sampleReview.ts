@@ -113,37 +113,18 @@ export const sampleArtifactUnderstanding: ArtifactUnderstanding = {
   },
 };
 
-export function createDefaultArtifactUnderstanding(screenshotName?: string, url?: string): ArtifactUnderstanding {
-  return {
-    productType: url ? 'Web Application / Digital Product Interface' : 'Application Screen / Interactive Flow',
-    likelyUser: 'Product end-users and primary domain practitioners',
-    detectedJourney: 'User onboarding, key functional task, or conversion sequence',
-    frictionSignals: [
-      'Visual hierarchy competition between primary conversion CTA and secondary links',
-      'Cognitive density in configuration and data input fields',
-      'Unclear affordance on next step requirements and prerequisite tasks',
-    ],
-    facts: [
-      `Artifact source: ${screenshotName || url || 'Uploaded visual artifact'}`,
-      'Interactive form elements and navigational chrome present in layout',
-      'Single-viewport workflow requiring user decision to proceed',
-    ],
-    inferences: [
-      'Users may experience decision paralysis if prerequisites are not clearly separated',
-      'The experience assumes familiarity with domain terminology',
-    ],
-    assumptions: [
-      'Target user has necessary context or credentials before reaching this screen',
-      'The user is motivated to complete the full sequence in a single session',
-    ],
-    unknowns: [
-      'Target business metrics (e.g. Day-14 activation rate or conversion baseline)',
-      'Specific qualitative user feedback or support ticket themes',
-      'Quantitative drop-off funnel telemetry across steps',
-    ],
-    isConfirmed: false,
-  };
-}
+/*
+ * Stage 1 \u00b7 createDefaultArtifactUnderstanding() is deleted.
+ *
+ * It returned a complete artifact reading \u2014 product type, likely user,
+ * detected journey, three friction signals, three "facts" including the file
+ * name, two inferences, two assumptions and three unknowns \u2014 built from
+ * nothing but a file name and a URL. Four call sites used it, and none of them
+ * labelled the result. CAP-01's failure state forbids it in so many words, and
+ * \u00a751 never-1 forbids the whole class.
+ *
+ * There is no replacement. An artifact that could not be read has no reading.
+ */
 
 export const sampleProductContext: ProductContext = {
   name: 'FlowPilot (Customer Journey Automations)',
@@ -296,5 +277,5 @@ export const sampleProductReview: ProductReview = {
   },
   recommendedNextStep:
     'Run a 5-user usability test focused on first-session activation before redesigning the onboarding flow.',
-  isMock: true,
+  isSample: true,
 };
