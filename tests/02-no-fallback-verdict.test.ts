@@ -108,11 +108,15 @@ describe('5 · no fallback verdict', () => {
     });
 
     const notRun = outcome.provenance.stages.filter((s) => s.status === 'not_run');
-    // The gate, the cross-examination and the Red Team are not built, and the
-    // run says so instead of omitting them (TR-4).
-    expect(notRun.map((s) => s.stage).sort()).toEqual(
-      ['cross_examination', 'gate', 'red_team'].sort()
-    );
+    // The cross-examination and the Red Team are not built, and the run says so
+    // instead of omitting them (TR-4).
+    //
+    // Stage 5 removed `gate` from this list, because the gate is now built. It
+    // is recorded here as `failed`, which is what actually happened to it.
+    expect(notRun.map((s) => s.stage).sort()).toEqual(['cross_examination', 'red_team'].sort());
+    expect(
+      outcome.provenance.stages.find((s) => s.stage === 'gate')?.status
+    ).toBe('failed');
     for (const stage of notRun) {
       expect(stage.reason && stage.reason.length).toBeGreaterThan(0);
     }

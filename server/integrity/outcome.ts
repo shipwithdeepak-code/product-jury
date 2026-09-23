@@ -22,6 +22,7 @@
 
 import { ProductJuryError, FailureCode, isProductJuryError } from './errors';
 import type { RunProvenance } from './provenance';
+import type { Decision } from '../../src/types/decision';
 
 export type RunOutcomeKind = 'VERDICT' | 'INSUFFICIENT' | 'FAILED';
 
@@ -65,6 +66,16 @@ export interface InsufficientOutcome {
   /** The assessment that produced the refusal. */
   assessment: SufficiencyAssessment;
   provenance: RunProvenance;
+  /**
+   * Stage 5 · CAP-18: "the decision enters an explicit awaiting-evidence state
+   * ... and remains a real object, not a failed attempt."
+   *
+   * A refusal is a complete outcome, so it becomes a Decision with an
+   * INSUFFICIENT version 1 and no verdict — the shape Stage 3 built and left
+   * unused. Optional because the callers that build a refusal in a test do not
+   * all have a spine behind them; a FAILED run never has one, by construction.
+   */
+  decision?: Decision;
 }
 
 export interface FailedOutcome {
@@ -107,6 +118,8 @@ export function refusal(
   missing: MissingItem[],
   provenance: RunProvenance
 ): InsufficientOutcome {
+  // Every guard below runs before the outcome exists. Nothing about the
+  // Decision a caller may attach afterwards can reach them.
   if (isProductJuryError(assessment as unknown)) {
     throw new RefusalIntegrityError(
       'A technical failure was passed where a sufficiency assessment is required. ' +

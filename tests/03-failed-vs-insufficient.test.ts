@@ -128,10 +128,23 @@ describe('6 · FAILED and INSUFFICIENT are different outcomes', () => {
     });
     expect(outcome.kind).toBe('FAILED');
 
-    // Stage 1 has no sufficiency gate, so INSUFFICIENT is unreachable rather
-    // than reachable-by-accident. The source is asserted as well as the run.
+    /*
+     * Stage 5 built the gate, so the orchestrator does now construct refusals —
+     * this assertion changed with the pipeline, and it changed to the stronger
+     * form rather than being dropped.
+     *
+     * What must remain true is that no *failure* can become one. There is one
+     * construction of a refusal in the file, and the catch block that every
+     * error in the pipeline lands in contains `failed(` and nothing else.
+     */
     const source = readFileSync(join(__dirname, '..', 'server/orchestrator.ts'), 'utf8');
-    expect(source).not.toMatch(/refusal\s*\(/);
+    expect(source.match(/=\s*refusal\(/g)?.length).toBe(1);
+
+    // The terminal catch — the single exit every failure in the pipeline
+    // reaches — is the last one in the file.
+    const catchBlock = source.slice(source.lastIndexOf('} catch (error) {'));
+    expect(catchBlock).toContain('failed(error');
+    expect(catchBlock).not.toMatch(/=\s*refusal\(/);
   });
 
   it('renders the two outcomes as different kinds of surface', () => {

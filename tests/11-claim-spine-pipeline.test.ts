@@ -611,7 +611,9 @@ describe('19 · Stage 1 failure states are unchanged', () => {
         .filter((stage) => stage.status === 'not_run')
         .map((stage) => stage.stage)
         .sort()
-    ).toEqual(['cross_examination', 'gate', 'red_team'].sort());
+      // Stage 5 built the gate, so it is no longer on this list. It fails here
+      // with everything else, and is recorded as failed.
+    ).toEqual(['cross_examination', 'red_team'].sort());
   });
 
   it('refuses a reading that carries no spine rather than flattening it', async () => {

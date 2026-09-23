@@ -73,9 +73,42 @@ export class RunRecorder {
     this.stages.push(entry);
   }
 
+  /**
+   * Stage 5 · Record why a stage that DID run came out the way it did.
+   *
+   * The gate (CAP-18) has three outcomes a reader needs to tell apart: it ran
+   * and the evidence was sufficient, it ran and refused, or it failed. The
+   * first two are both `completed`, so without this they look identical in the
+   * provenance. The reason is a constant chosen by the product — PR-6 still
+   * holds, and nothing model-written or PM-written may be passed here.
+   */
+  note(stage: PipelineStage, reason: string): void {
+    for (let index = this.stages.length - 1; index >= 0; index -= 1) {
+      if (this.stages[index].stage === stage) {
+        this.stages[index].reason = reason;
+        return;
+      }
+    }
+    // A note about a stage that never ran would be a claim about something
+    // that did not happen.
+    throw new Error(`no ${stage} stage has been recorded, so there is nothing to note`);
+  }
+
   /** Declare a stage that never ran, with the real reason. TR-4. */
   notRun(stage: PipelineStage, reason: string): void {
     this.stages.push({ stage, status: 'not_run', attempts: 0, durationMs: 0, reason });
+  }
+
+  /**
+   * Stage 5 · Declare a stage that exists and was deliberately not attempted,
+   * with the real reason. TR-4.
+   *
+   * Distinct from `notRun`: `not_run` is a stage this build does not have,
+   * `skipped` is one it has and chose not to run — which, until CAP-18, no
+   * code path could do. The reason is never a euphemism for a failure.
+   */
+  skipped(stage: PipelineStage, reason: string): void {
+    this.stages.push({ stage, status: 'skipped', attempts: 0, durationMs: 0, reason });
   }
 
   snapshot(): RunProvenance {

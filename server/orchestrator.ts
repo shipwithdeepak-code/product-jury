@@ -14,6 +14,8 @@ import { measureOriginCoverage } from './claims/originCoverage';
 import type { SpecialistPosition } from '../src/types/claims';
 import type { Decision } from '../src/types/decision';
 import { decisionFromRun } from './decision/fromLegacy';
+import { runSufficiencyGate } from './agents/sufficiencyGateAgent';
+import { refusal } from './integrity/outcome';
 
 /**
  * Stage 1 · The pipeline, rebuilt so that it can produce nothing.
@@ -66,6 +68,23 @@ import { decisionFromRun } from './decision/fromLegacy';
  *    with the legacy `ProductReview` carried alongside it for the surfaces
  *    that still read it.
  *
+ * Stage 5 adds the early sufficiency gate (CAP-18) between the statements and
+ * the panel. It is the first code in this product that can produce
+ * INSUFFICIENT: the outcome has been a reachable state in the type system
+ * since Stage 1 and nothing has ever built one. Three things about it matter
+ * more than the call itself.
+ *
+ *  - It runs BEFORE the lenses. A refusal that arrives after the whole
+ *    deliberation reads as a failure whatever it says (CAP-18's user problem),
+ *    and the specialists are the expensive part.
+ *  - On a refusal, nothing downstream runs. The lenses, the cross-examination
+ *    and the chair are recorded as `skipped` with the real reason, so TR-4 can
+ *    say what did not run and why.
+ *  - It cannot refuse on the product's behalf. The gate agent returns an
+ *    assessment or throws; a thrown error lands in the one catch below and
+ *    becomes FAILED. `refusal()` will not build an INSUFFICIENT outcome
+ *    without a completed assessment, and a ProductJuryError is not one.
+ *
  * What a FAILED run does NOT do is become a Decision. A run that fails before
  * a spine exists has no statements, no positions and no reading; a Version
  * built from it would be a record of a deliberation that never happened. The
@@ -101,6 +120,42 @@ export interface DeliberationResult {
   review: ProductReview;
 }
 
+/**
+ * The reasons the gate writes into the provenance. Constants, because PR-6
+ * forbids anything model-written or PM-written in a stage record.
+ */
+const GATE_PASSED =
+  'The evidence can support a defensible call on the stated question, so the panel ran.';
+const GATE_REFUSED =
+  'The evidence cannot support a defensible call on the stated question, so the run stopped here.';
+const GATE_STOPPED_THE_RUN =
+  'The sufficiency gate refused, so this stage was not attempted (CAP-18).';
+
+/**
+ * Stage 5 · The one place a run becomes a Decision, for both of the outcomes
+ * that are allowed to become one.
+ *
+ * A verdict and a refusal are both complete outcomes and both belong in the
+ * record (§17, CAP-18). A FAILED run is not, and cannot reach here: there is
+ * no call to this function on that path.
+ */
+function asDecision(
+  outcome: RunOutcome<ProductReview>,
+  spine: ClaimSpine,
+  specialistPositions: SpecialistPosition[],
+  options: DeliberationOptions
+): Decision {
+  return decisionFromRun({
+    decisionQuestion: options.decisionQuestion.trim(),
+    outcome,
+    spine,
+    specialistPositions,
+    origin: 'pipeline',
+    isSample: options.isSample,
+    clock: options.clock,
+  });
+}
+
 export async function runProductJuryDeliberation(
   options: DeliberationOptions
 ): Promise<RunOutcome<DeliberationResult>> {
@@ -127,7 +182,6 @@ export async function runProductJuryDeliberation(
 
   // Stages this build does not have. Declared rather than omitted, so TR-4's
   // "which stages ran and which did not" is answerable and honest.
-  recorder.notRun('gate', 'The early sufficiency gate (CAP-18) is not built in this stage.');
   recorder.notRun(
     'cross_examination',
     'The cross-examination round (CAP-05) is not built in this stage; the lenses do not see each other.'
@@ -203,6 +257,58 @@ export async function runProductJuryDeliberation(
         },
       });
     }
+
+    /*
+     * Phase 0 — CAP-18. The cheap half of the audit, before anything expensive.
+     *
+     * Sufficiency is relative to the confirmed question, which is why this
+     * stage could not exist before CAP-04 did: "is there enough information
+     * about this product" has no answer, and "can this evidence carry a call
+     * on this question" has one.
+     */
+    const gate = await runSufficiencyGate({
+      context,
+      decisionQuestion,
+      rawEvidence,
+      spine,
+      budget,
+      recorder,
+    });
+
+    if (gate.sufficient === false) {
+      recorder.note('gate', GATE_REFUSED);
+      for (const stage of ['specialist_ux', 'specialist_strategy', 'auditor', 'chair'] as const) {
+        recorder.skipped(stage, GATE_STOPPED_THE_RUN);
+      }
+
+      /*
+       * The one construction of a refusal. `refusal()` re-checks the
+       * assessment and the two-item floor before it will build anything, so a
+       * malformed gate result cannot become an outcome even from here.
+       */
+      /*
+       * The gate validated every claim id a gap named — an id this run does
+       * not have failed the run before this line. It cannot carry them any
+       * further: `MissingItem` is three fields (§17), and the Decision's
+       * closed schema rejects a fourth. So the references are dropped here
+       * rather than widened into the domain behind the PRD's back. Reported
+       * as a Stage 5 contract conflict, not resolved silently.
+       */
+      const missing = gate.missing.map(({ item, whyItMatters, howToGetIt }) => ({
+        item,
+        whyItMatters,
+        howToGetIt,
+      }));
+
+      const outcome = refusal(gate.assessment, missing, recorder.snapshot());
+
+      // CAP-18: "the decision enters an explicit awaiting-evidence state" and
+      // "remains a real object, not a failed attempt". No verdict, no
+      // positions, and the version says which point refused.
+      return { ...outcome, decision: asDecision(outcome, spine, [], options) };
+    }
+
+    recorder.note('gate', GATE_PASSED);
 
     // Phase 1 — the two lenses. Run in parallel; either failing fails the run.
     const [uxSettled, strategySettled] = await Promise.allSettled([
@@ -286,15 +392,7 @@ export async function runProductJuryDeliberation(
     ];
 
     const outcome = verdict(review, recorder.snapshot());
-    const decision = decisionFromRun({
-      decisionQuestion,
-      outcome,
-      spine,
-      specialistPositions,
-      origin: 'pipeline',
-      isSample: options.isSample,
-      clock: options.clock,
-    });
+    const decision = asDecision(outcome, spine, specialistPositions, options);
 
     return verdict({ decision, review }, outcome.provenance);
   } catch (error) {

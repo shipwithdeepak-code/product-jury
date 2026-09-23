@@ -261,6 +261,13 @@ async function startServer() {
           refusedAt: outcome.refusedAt,
           missing: outcome.missing,
           provenance: outcome.provenance,
+          /*
+           * Stage 5 · CAP-18: a refusal "remains a real object, not a failed
+           * attempt". Version 1 carries the statements, the outcome and no
+           * verdict, and it goes through the same validator as any other
+           * decision on the way out.
+           */
+          ...(outcome.decision ? { decision: serializeDecision(outcome.decision) } : {}),
         });
       }
 

@@ -181,9 +181,16 @@ export function InsufficientView({
             Not enough to judge this
           </h2>
           <p className="mt-2 text-sm text-stone-700 dark:text-stone-300 leading-relaxed">
-            The panel ran and assessed the evidence. It cannot carry a defensible call on the
-            question as asked. That is an answer, not a fault: a verdict here would have been
-            fluent and unfounded.
+            {/*
+              Stage 5 · The two refusal points reached this surface by different
+              routes, and the sentence has to be true of the one that happened.
+              CAP-18 refuses BEFORE the panel runs, so the previous wording —
+              "the panel ran and assessed the evidence" — would have been a
+              claim about a stage that was skipped.
+            */}
+            {refusal.refusedAt === 'GATE'
+              ? 'The evidence was assessed against the question you asked, before the panel was convened. It cannot carry a defensible call, so the deliberation was stopped rather than run to a fluent and unfounded verdict. That is an answer, not a fault.'
+              : 'The panel ran and assessed the evidence. It cannot carry a defensible call on the question as asked. That is an answer, not a fault: a verdict here would have been fluent and unfounded.'}
           </p>
         </div>
 

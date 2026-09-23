@@ -212,7 +212,14 @@ function successfulRun(overrides: { decisionQuestion?: string } = {}) {
   const spine = spineForRun();
   const understanding = projectUnderstanding(spine, reading(E_MIXED_ARTIFACT));
   const { client, calls } = stubProvider(({ index }) => {
-    const body = [uxResponse(spine), strategyResponse(spine), auditorResponse, chairResponse][index];
+    // Stage 5 put the sufficiency gate first. Call 0 is the gate.
+    const body = [
+      { sufficient: true, missing: [] },
+      uxResponse(spine),
+      strategyResponse(spine),
+      auditorResponse,
+      chairResponse,
+    ][index];
     return { text: JSON.stringify(body) };
   });
   __setGenAIClientForTests(client);
@@ -843,9 +850,11 @@ describe('28 · AB–AE · the stages below this one still hold', () => {
   it('AD · Stage 2.5 · a lens that cites nothing still fails the run', async () => {
     const spine = spineForRun();
     const understanding = projectUnderstanding(spine, reading(E_MIXED_ARTIFACT));
-    const { client } = stubProvider(() => ({
-      text: JSON.stringify({ ...uxResponse(spine), positions: [] }),
-    }));
+    const { client } = stubProvider(({ index }) =>
+      index === 0
+        ? { text: JSON.stringify({ sufficient: true, missing: [] }) }
+        : { text: JSON.stringify({ ...uxResponse(spine), positions: [] }) }
+    );
     __setGenAIClientForTests(client);
 
     const outcome = await runProductJuryDeliberation({
