@@ -42,6 +42,28 @@ export const sampleRawEvidence = `User Research & Data Log:
 - Support tickets: 14 tickets this month asking "Why is my test trigger grayed out?".
 - No production event instrumentation currently exists for time-to-first-webhook response.`;
 
+/**
+ * Stage 3 · TR-8. The question the demonstration decision answers.
+ *
+ * A Decision is identified by its question (§17, FR-4b), and `ProductReview`
+ * has never had one because CAP-04 — the capability that proposes it and has
+ * the PM confirm it — is not built. The bundled sample needs one in order to
+ * exist as a canonical Decision, so it is written here as sample content,
+ * labelled like everything else in this file, rather than composed at runtime
+ * out of the product name and the primary goal.
+ */
+export const sampleDecisionQuestion =
+  'Should we redesign the FlowPilot onboarding wizard before the Q4 activation push, or ship the current canvas and instrument it first?';
+
+/**
+ * Stage 3 · The moment the demonstration decision is pinned to.
+ *
+ * `sampleProductReview.timestamp` is `new Date()`, which makes the sample a
+ * different object on every import. A Decision has a created time that its
+ * event log is ordered by, so the sample needs a fixed one.
+ */
+export const SAMPLE_DECISION_AT = '2026-09-22T00:00:00.000Z';
+
 export const sampleProductReview: ProductReview = {
   id: 'rev-sample-flowpilot-01',
   timestamp: new Date().toISOString(),

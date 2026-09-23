@@ -267,6 +267,18 @@ export interface StageProvenance {
   durationMs: number;
   failureCode?: string;
   reason?: string;
+  /*
+   * Stage 3 · These three were on `server/integrity/provenance.ts` from Stage 1
+   * and never on this copy, so the two declarations of one model had drifted by
+   * three fields. A version stores its run metadata through this type, and a
+   * stored decision that could not carry the cost of the run it records would
+   * be losing NFR-9's own numbers on the way into storage. The two declarations
+   * are still two declarations — unifying them is a refactor Stage 3 was told
+   * not to make, and it is in the Stage 3 report as a remaining risk.
+   */
+  promptTokens?: number;
+  responseTokens?: number;
+  estimatedCostCents?: number;
 }
 
 export interface RunProvenance {
@@ -393,3 +405,31 @@ export interface DeliberationInput {
   context: ProductContext;
   rawEvidence?: string;
 }
+
+/**
+ * Stage 3 · The Decision object.
+ *
+ * Re-exported here so that the durable domain and the transient run types are
+ * imported from one place, and so it is visible in this file that there is one
+ * domain model rather than two. `ProductReview` above remains the pipeline's
+ * output type; `server/decision/fromLegacy.ts` is the only thing that turns
+ * one into a Decision.
+ */
+export { DECISION_SCHEMA_VERSION, VERSION_ORIGINS, VERSION_TRIGGERS } from './decision';
+export type {
+  Decision,
+  DecisionEvent,
+  DecisionEventKind,
+  DecisionId,
+  DecisionState,
+  DecisionVersion,
+  OpenLoop,
+  OpenLoopId,
+  SpecialistPositionId,
+  VersionId,
+  VersionOrigin,
+  VersionOutcome,
+  VersionStageOutcome,
+  VersionTrigger,
+  VersionVerdict,
+} from './decision';
