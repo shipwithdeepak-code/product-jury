@@ -18,9 +18,14 @@ import { deserializeDecision, serializeDecision } from './serialization';
  * store which does survive a restart has one thing to implement and no
  * decisions to make about the domain.
  *
- * WHERE THE REAL STORE WILL BE. §55 is explicit: "Decisions are stored
- * client-side first (IndexedDB), which is what makes them private." That is
- * the target, and it is deliberately not built here.
+ * WHERE THE REAL STORE IS. §55 is explicit: "Decisions are stored client-side
+ * first (IndexedDB), which is what makes them private."
+ *
+ * Stage 6 built it: `src/storage/indexedDbDecisionStore.ts`, in the browser,
+ * against this interface and no other. The paragraph above still describes
+ * `InMemoryDecisionStore` below, which remains what the server and the tests
+ * use — a real store needs a browser, and the deliberation does not run in
+ * one.
  *
  * WHY THE DOMAIN DOES NOT KNOW ABOUT ANY OF THIS. Not one type in
  * `src/types/decision.ts` mentions a store, a key, a database or a browser. A
@@ -77,12 +82,115 @@ export class DecisionStoreError extends Error {
   }
 }
 
+/**
+ * Stage 6 · What can go wrong with storage, as a closed list.
+ *
+ * These are deliberately NOT members of `FAILURE_CODES` in
+ * `server/integrity/errors.ts`, and a test asserts that they never become one.
+ * That taxonomy describes a deliberation that could not run; this one
+ * describes a browser that could not keep what the deliberation produced.
+ * Collapsing the two would let a full disk read as a failed analysis, and a
+ * refusal to store a decision read as a refusal to judge it — which is §51
+ * never-9 arriving through the back door.
+ */
+export const STORAGE_FAILURE_CODES = [
+  /** No IndexedDB in this runtime, or the browser refuses to open one. */
+  'STORAGE_UNAVAILABLE',
+  /** The database would not open, or the upgrade failed. */
+  'STORAGE_OPEN_FAILED',
+  /** A read transaction failed. */
+  'STORAGE_READ_FAILED',
+  /** A write transaction failed. Quota is the common cause. */
+  'STORAGE_WRITE_FAILED',
+  /** Something is stored under that key, and it is not a decision this build can read. */
+  'STORAGE_CORRUPT',
+] as const;
+
+export type StorageFailureCode = (typeof STORAGE_FAILURE_CODES)[number];
+
+const STORAGE_MESSAGES: Record<StorageFailureCode, string> = {
+  STORAGE_UNAVAILABLE:
+    'This browser will not let Product Jury keep decisions on this device, so nothing was stored. ' +
+    'The decision on screen is unaffected.',
+  STORAGE_OPEN_FAILED:
+    'The decision store on this device could not be opened, so nothing was read or written. The ' +
+    'decision on screen is unaffected.',
+  STORAGE_READ_FAILED: 'A stored decision could not be read from this device. Nothing was changed.',
+  STORAGE_WRITE_FAILED:
+    'This decision could not be kept on this device — the browser refused the write, usually ' +
+    'because it is out of space. Nothing was stored, and what is on screen is unaffected.',
+  STORAGE_CORRUPT:
+    'A stored decision on this device does not match the shape this build reads, so it was not ' +
+    'opened. It has been left exactly as it is rather than repaired or replaced.',
+};
+
+/**
+ * A storage failure, with the PM-facing sentence chosen from the code.
+ *
+ * `cause` holds whatever the browser threw, for a developer console. SR-4:
+ * `userMessage` never carries it, so a DOMException, a quota number or a
+ * database path cannot reach a surface.
+ */
+export class DecisionStorageError extends DecisionStoreError {
+  readonly code: StorageFailureCode;
+  readonly userMessage: string;
+
+  constructor(code: StorageFailureCode, detail: string, options?: { cause?: unknown }) {
+    super(`${code}: ${detail}`);
+    this.name = 'DecisionStorageError';
+    this.code = code;
+    this.userMessage = STORAGE_MESSAGES[code];
+    if (options && 'cause' in options) this.cause = options.cause;
+  }
+}
+
+/**
+ * CAP-12's ordering: most recent activity first.
+ *
+ * The tie-break on id is what makes it deterministic rather than merely
+ * sorted. Two decisions can carry the same `updatedAt` — a fixed clock in a
+ * test, or two runs inside the same millisecond — and without it their order
+ * would depend on insertion, which differs between a store that iterates a Map
+ * and one that iterates an IndexedDB cursor. It introduces no second ordering
+ * field: both halves are existing Decision values.
+ */
+export function compareListings(a: DecisionListing, b: DecisionListing): number {
+  const byActivity = b.lastActivityAt.localeCompare(a.lastActivityAt);
+  return byActivity !== 0 ? byActivity : a.id.localeCompare(b.id);
+}
+
 function countDependencyEdges(decision: Decision): number {
   return decision.versions.reduce(
     (total, version) =>
       total + version.claimSpine.claims.reduce((sum, claim) => sum + claim.supports.length, 0),
     0
   );
+}
+
+/**
+ * PR-4 and PR-8, counted. Shared by every adapter, so two stores cannot
+ * disagree about what a deletion removed.
+ */
+export function deletionReceiptFor(decision: Decision, at: string): DecisionDeletionReceipt {
+  return {
+    decisionId: decision.id,
+    removed: {
+      decision: true,
+      versions: decision.versions.length,
+      claims: decision.versions.reduce((sum, version) => sum + version.claimSpine.claims.length, 0),
+      specialistPositions: decision.versions.reduce(
+        (sum, version) => sum + version.specialistPositions.length,
+        0
+      ),
+      dependencyEdges: countDependencyEdges(decision),
+      openLoops: decision.openLoops.length,
+      eventLogEntries: decision.eventLog.length,
+    },
+    notReversed:
+      'The content-free counters already sent are not reversed by this deletion. The server keeps ' +
+      'totals rather than per-decision records (§55, TEL-9).',
+    at,
+  };
 }
 
 /**
@@ -112,7 +220,9 @@ export class InMemoryDecisionStore implements DecisionStore {
   async getDecision(id: string): Promise<Decision | null> {
     const stored = this.records.get(id);
     if (stored === undefined) return null;
-    return deserializeDecision(JSON.parse(JSON.stringify(stored)));
+    // Stage 6: the copy is `deserializeDecision`'s now, so a caller holding a
+    // decision still cannot reach into the store through it.
+    return deserializeDecision(stored);
   }
 
   async saveDecision(decision: Decision): Promise<Decision> {
@@ -132,32 +242,14 @@ export class InMemoryDecisionStore implements DecisionStore {
       if (decision) listings.push(listingFor(decision));
     }
     // CAP-12: the list shows last activity, most recent first.
-    return listings.sort((a, b) => b.lastActivityAt.localeCompare(a.lastActivityAt));
+    return listings.sort(compareListings);
   }
 
   async deleteDecision(id: string): Promise<DecisionDeletionReceipt | null> {
     const decision = await this.getDecision(id);
     if (!decision) return null;
 
-    const receipt: DecisionDeletionReceipt = {
-      decisionId: id,
-      removed: {
-        decision: true,
-        versions: decision.versions.length,
-        claims: decision.versions.reduce((sum, version) => sum + version.claimSpine.claims.length, 0),
-        specialistPositions: decision.versions.reduce(
-          (sum, version) => sum + version.specialistPositions.length,
-          0
-        ),
-        dependencyEdges: countDependencyEdges(decision),
-        openLoops: decision.openLoops.length,
-        eventLogEntries: decision.eventLog.length,
-      },
-      notReversed:
-        'The content-free counters already sent are not reversed by this deletion. The server keeps ' +
-        'totals rather than per-decision records (§55, TEL-9).',
-      at: new Date().toISOString(),
-    };
+    const receipt = deletionReceiptFor(decision, new Date().toISOString());
 
     // One record holds everything, so one removal reaches everything. This
     // adapter keeps no listing cache, no index and no copy.

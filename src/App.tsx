@@ -21,6 +21,7 @@ import {
   sampleDecisionQuestion,
 } from './data/sampleReview';
 import { reviewService } from './services/reviewService';
+import { persistDecision } from './services/decisionPersistence';
 import * as telemetry from './services/telemetryClient';
 import type { EditDistanceBand } from './integrity/decisionQuestion';
 import {
@@ -63,6 +64,12 @@ export default function App() {
    */
   const [runResult, setRunResult] = useState<RunResult | null>(null);
   const [reviewHistory, setReviewHistory] = useState<ProductReview[]>([]);
+  /*
+   * Stage 6 · CAP-12: "If a decision cannot be kept, the product says so at
+   * the time." One sentence, from the storage taxonomy, never a browser error.
+   * Null is the ordinary case, including when there was nothing to store.
+   */
+  const [storageNotice, setStorageNotice] = useState<string | null>(null);
 
   const [decisionId, setDecisionId] = useState<string>(() => telemetry.mintDecisionId());
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -175,6 +182,26 @@ export default function App() {
 
     setRunResult(result);
 
+    /*
+     * Stage 6 · CAP-12. The canonical Decision becomes durable here, and this
+     * is the only place it is stored.
+     *
+     * What is persisted is `result.decision` — the Decision the server built
+     * and validated — never `result.review`, which is presentation state for
+     * the surfaces that have not moved yet. A run with no decision (a sample,
+     * or a response this build could not read) stores nothing rather than
+     * assembling one out of the review.
+     *
+     * The await is deliberate: the PM is told before the results tab opens,
+     * rather than finding out later that nothing was kept. It cannot change
+     * the outcome — `persistDecision` returns, it does not throw.
+     */
+    setStorageNotice(null);
+    if (result.kind !== 'FAILED' && result.decision) {
+      const kept = await persistDecision(result.decision);
+      if (!kept.stored) setStorageNotice(kept.userMessage ?? null);
+    }
+
     // §55. Three outcomes, three events. A failure is not a refusal and does
     // not emit a refusal event (E1's correction is the reason both refusal
     // kinds exist and neither covers a failure).
@@ -223,6 +250,19 @@ export default function App() {
       />
 
       <main className="flex-1 pb-4">
+        {/*
+          CAP-12's failure state, said at the time and said once. It is not an
+          alert and not a modal: the deliberation succeeded, and only the
+          keeping of it did not.
+        */}
+        {storageNotice && currentTab === 'results' && (
+          <p
+            role="status"
+            className="max-w-3xl mx-auto px-4 sm:px-6 pt-4 text-xs text-stone-600 dark:text-stone-400 leading-relaxed"
+          >
+            {storageNotice}
+          </p>
+        )}
         {currentTab === 'workspace' ? (
           <WorkspaceForm
             context={context}

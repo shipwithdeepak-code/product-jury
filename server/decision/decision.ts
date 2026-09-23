@@ -33,7 +33,12 @@ import type {
   VersionVerdict,
 } from '../../src/types/decision';
 import { mintDecisionId, mintOpenLoopId, mintVersionId } from './identity';
-import { DecisionValidationError, deserializeDecision, serializeDecision } from './serialization';
+import {
+  DecisionValidationError,
+  deserializeDecision,
+  freezeDeep,
+  serializeDecision,
+} from './serialization';
 
 /**
  * Stage 3 · The Decision, and the operations that may change it.
@@ -56,15 +61,6 @@ import { DecisionValidationError, deserializeDecision, serializeDecision } from 
  * scores, or produces a verdict. A version's outcome and verdict are whatever
  * the run that produced them reported, carried in unchanged.
  */
-
-/** Deep-freeze. A committed version is a record of a moment, not a workspace. */
-function freezeDeep<T>(value: T): T {
-  if (value === null || typeof value !== 'object') return value;
-  for (const key of Object.getOwnPropertyNames(value)) {
-    freezeDeep((value as Record<string, unknown>)[key]);
-  }
-  return Object.freeze(value);
-}
 
 function now(clock?: () => string): string {
   return clock ? clock() : new Date().toISOString();

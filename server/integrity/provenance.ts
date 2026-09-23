@@ -14,7 +14,6 @@
  * PM-supplied string.
  */
 
-import { randomUUID } from 'crypto';
 import { FailureCode } from './errors';
 import { findTier, PipelineStage, usedUnevaluatedTier } from './modelRegistry';
 
@@ -57,7 +56,13 @@ export class RunRecorder {
   private readonly startedAt: number;
   private readonly stages: StageProvenance[] = [];
 
-  constructor(runId: string = randomUUID()) {
+  /*
+   * Stage 6 · `crypto.randomUUID()` off the global rather than `node:crypto`'s
+   * import, for the reason in `server/decision/identity.ts`: this module's
+   * stage-field list is read by the Decision validator, which now runs in the
+   * browser too. It is the same standard API in both runtimes, not a polyfill.
+   */
+  constructor(runId: string = crypto.randomUUID()) {
     this.runId = runId;
     this.startedAt = Date.now();
   }

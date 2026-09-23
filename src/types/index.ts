@@ -1,4 +1,5 @@
 import type { ClaimId } from './claims';
+import type { Decision } from './decision';
 
 export type Verdict = 'SHIP' | 'ITERATE' | 'TEST' | 'KILL';
 
@@ -307,6 +308,15 @@ export interface VerdictRun {
   kind: 'VERDICT';
   review: ProductReview;
   provenance?: RunProvenance;
+  /**
+   * Stage 6 · CAP-12. The canonical Decision this run produced.
+   *
+   * Optional because a sample review and a review reopened from the legacy
+   * history have none — those are presentation state, and the absence is the
+   * honest way to say so. `review` is what the existing surfaces render;
+   * `decision` is what is stored. They are one run, not two.
+   */
+  decision?: Decision;
 }
 
 /** CAP-07. A complete outcome, not an error. */
@@ -316,6 +326,8 @@ export interface InsufficientRun {
   /** FR-15: at least two. */
   missing: MissingItem[];
   provenance?: RunProvenance;
+  /** Stage 6 · CAP-18 refusals are real Decisions too, and are stored. */
+  decision?: Decision;
 }
 
 /** A technical failure. Never an epistemic statement about the evidence. */

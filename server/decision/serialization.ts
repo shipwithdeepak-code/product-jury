@@ -642,7 +642,30 @@ export function deserializeDecision(raw: unknown, label = 'a stored decision'): 
 
   if (errors.length > 0) throw new DecisionValidationError(errors, label);
 
-  return value as unknown as Decision;
+  /*
+   * Stage 6 · A frozen copy, for two reasons.
+   *
+   * Frozen, because §17 and Stage 6 §6 say a committed version is a record of
+   * a moment rather than a workspace. `createDecision` and `commitVersion`
+   * have deep-frozen what they build since Stage 3; a decision read back out
+   * of storage obeys the same rule, or "immutable" would quietly mean
+   * "immutable until you reload".
+   *
+   * A copy, because the caller's own object must not be frozen underneath it —
+   * `serializeDecision` validates through here and then returns the plain
+   * record it was given, and that record is transport, not domain. The copy is
+   * not extra work: it replaces the one every store made by hand.
+   */
+  return freezeDeep(JSON.parse(JSON.stringify(value))) as unknown as Decision;
+}
+
+/** Deep-freeze. A committed version is a record of a moment, not a workspace. */
+export function freezeDeep<T>(value: T): T {
+  if (value === null || typeof value !== 'object') return value;
+  for (const key of Object.getOwnPropertyNames(value)) {
+    freezeDeep((value as Record<string, unknown>)[key]);
+  }
+  return Object.freeze(value);
 }
 
 /**

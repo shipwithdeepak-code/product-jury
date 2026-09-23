@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from 'node:crypto';
+import { sha256OfFields } from '../../src/integrity/sha256';
 import type { DecisionId, OpenLoopId, VersionId } from '../../src/types/decision';
 
 /**
@@ -51,7 +51,7 @@ export const DECISION_ID_PATTERN = new RegExp(`^${DECISION_PREFIX}[a-z2-7]{${BOD
 export const VERSION_ID_PATTERN = new RegExp(`^${VERSION_PREFIX}[a-z2-7]{${BODY_LENGTH}}$`);
 export const OPEN_LOOP_ID_PATTERN = new RegExp(`^${LOOP_PREFIX}[a-z2-7]{${BODY_LENGTH}}$`);
 
-function base32(bytes: Buffer, length: number): string {
+function base32(bytes: Uint8Array, length: number): string {
   let bits = 0;
   let value = 0;
   let output = '';
@@ -74,9 +74,19 @@ function normalise(text: string): string {
   return text.replace(/\s+/g, ' ').trim();
 }
 
-/** A fresh decision identifier. Random, for the two reasons above. */
+/**
+ * A fresh decision identifier. Random, for the two reasons above.
+ *
+ * Stage 6 · `crypto.getRandomValues` rather than `node:crypto`'s
+ * `randomBytes`, because this module is now read by the browser as well. It is
+ * the same cryptographic source in both runtimes and standard in both, so
+ * nothing here is a polyfill or a fallback: a runtime without it cannot mint a
+ * decision id, and says so rather than producing a weaker one.
+ */
 export function mintDecisionId(): DecisionId {
-  return DECISION_PREFIX + base32(randomBytes(20), BODY_LENGTH);
+  const bytes = new Uint8Array(20);
+  crypto.getRandomValues(bytes);
+  return DECISION_PREFIX + base32(bytes, BODY_LENGTH);
 }
 
 /** §17's "Decision + sequence number", as a handle. */
@@ -84,13 +94,11 @@ export function mintVersionId(decisionId: DecisionId, versionNumber: number): Ve
   if (!Number.isInteger(versionNumber) || versionNumber < 1) {
     throw new Error(`a version number is an integer from 1, not ${String(versionNumber)}`);
   }
-  const digest = createHash('sha256')
-    .update(decisionId)
-    .update('\u0000')
-    .update('VERSION')
-    .update('\u0000')
-    .update(String(versionNumber))
-    .digest();
+  /*
+   * Stage 6 · The same digest of the same bytes — see the note in
+   * `server/claims/identity.ts`. Every version id ever minted is unchanged.
+   */
+  const digest = sha256OfFields([decisionId, 'VERSION', String(versionNumber)]);
   return VERSION_PREFIX + base32(digest, BODY_LENGTH);
 }
 
@@ -101,15 +109,12 @@ export function mintOpenLoopId(input: {
   expectedEvidence: string;
   duePoint: string;
 }): OpenLoopId {
-  const digest = createHash('sha256')
-    .update(input.decisionId)
-    .update('\u0000')
-    .update(input.versionId)
-    .update('\u0000')
-    .update(normalise(input.expectedEvidence))
-    .update('\u0000')
-    .update(normalise(input.duePoint))
-    .digest();
+  const digest = sha256OfFields([
+    input.decisionId,
+    input.versionId,
+    normalise(input.expectedEvidence),
+    normalise(input.duePoint),
+  ]);
   return LOOP_PREFIX + base32(digest, BODY_LENGTH);
 }
 

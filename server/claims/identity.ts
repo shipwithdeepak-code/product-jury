@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { sha256OfFields } from '../../src/integrity/sha256';
 import type { ClaimId, EpistemicStatus } from '../../src/types/claims';
 
 /**
@@ -61,7 +61,7 @@ const ID_PATTERN = new RegExp(`^${ID_PREFIX}[a-z2-7]{${ID_BODY_LENGTH}}$`);
 
 const BASE32 = 'abcdefghijklmnopqrstuvwxyz234567';
 
-function base32(bytes: Buffer, length: number): string {
+function base32(bytes: Uint8Array, length: number): string {
   let bits = 0;
   let value = 0;
   let output = '';
@@ -97,15 +97,18 @@ export interface ClaimIdentityInput {
 }
 
 export function mintClaimId(input: ClaimIdentityInput): ClaimId {
-  const digest = createHash('sha256')
-    .update(input.runId)
-    .update('\u0000')
-    .update(input.producedBy)
-    .update('\u0000')
-    .update(input.epistemicStatus)
-    .update('\u0000')
-    .update(normaliseClaimText(input.text))
-    .digest();
+  /*
+   * Stage 6 · The same digest of the same bytes, computed by a hash that
+   * exists in both runtimes. `sha256OfFields` joins with the NUL that the
+   * chained `.update()` calls used to write between the fields, so every id
+   * this function has ever produced it still produces.
+   */
+  const digest = sha256OfFields([
+    input.runId,
+    input.producedBy,
+    input.epistemicStatus,
+    normaliseClaimText(input.text),
+  ]);
 
   return ID_PREFIX + base32(digest, ID_BODY_LENGTH);
 }
@@ -136,15 +139,12 @@ export function mintPositionId(input: {
   producedBy: string;
   text: string;
 }): string {
-  const digest = createHash('sha256')
-    .update(input.runId)
-    .update('\u0000')
-    .update(input.producedBy)
-    .update('\u0000')
-    .update('SPECIALIST_POSITION')
-    .update('\u0000')
-    .update(normaliseClaimText(input.text))
-    .digest();
+  const digest = sha256OfFields([
+    input.runId,
+    input.producedBy,
+    'SPECIALIST_POSITION',
+    normaliseClaimText(input.text),
+  ]);
 
   return POSITION_PREFIX + base32(digest, ID_BODY_LENGTH);
 }

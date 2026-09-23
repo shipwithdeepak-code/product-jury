@@ -5,6 +5,8 @@ import {
   RunProvenance,
   RunResult,
 } from '../types';
+import type { Decision } from '../types/decision';
+import { deserializeDecision } from '../../server/decision/serialization';
 
 /**
  * Stage 1 · The deliberation client, with the progress simulator removed.
@@ -95,6 +97,28 @@ export function runningSteps(): AnalysisProgressStep[] {
   ];
 }
 
+/**
+ * Stage 6 · CAP-12. The canonical Decision, read out of the response.
+ *
+ * The server validates on the way out; this validates again on the way in,
+ * through the same module, because a decision that reached the browser
+ * malformed is a decision the browser must not store.
+ *
+ * A response without a readable decision does not fail the run: the
+ * deliberation happened and the PM is owed its result. What it does is return
+ * nothing, so the caller stores nothing — the alternative, storing a
+ * half-understood object, is how a decision record stops being evidence.
+ */
+function decisionFromPayload(raw: unknown): Decision | undefined {
+  if (!raw) return undefined;
+  try {
+    return deserializeDecision(raw, 'the decision returned by the server');
+  } catch (error) {
+    console.error('[decision] the server returned a decision this build cannot read', error);
+    return undefined;
+  }
+}
+
 export interface IProductReviewService {
   runReview(request: ProductReviewRequest, onProgress?: ProgressCallback): Promise<RunResult>;
 }
@@ -152,6 +176,7 @@ export class ProductJuryReviewService implements IProductReviewService {
         refusedAt: payload.refusedAt === 'CEILING' ? 'CEILING' : 'GATE',
         missing: Array.isArray(payload.missing) ? payload.missing : [],
         provenance: payload.provenance,
+        decision: decisionFromPayload(payload.decision),
       };
     }
 
@@ -182,7 +207,12 @@ export class ProductJuryReviewService implements IProductReviewService {
     const review = payload.data as ProductReview;
     review.isSample = false;
 
-    return { kind: 'VERDICT', review, provenance: payload.provenance };
+    return {
+      kind: 'VERDICT',
+      review,
+      provenance: payload.provenance,
+      decision: decisionFromPayload(payload.decision),
+    };
   }
 }
 
