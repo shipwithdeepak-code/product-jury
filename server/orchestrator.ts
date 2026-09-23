@@ -287,20 +287,14 @@ export async function runProductJuryDeliberation(
        * malformed gate result cannot become an outcome even from here.
        */
       /*
-       * The gate validated every claim id a gap named — an id this run does
-       * not have failed the run before this line. It cannot carry them any
-       * further: `MissingItem` is three fields (§17), and the Decision's
-       * closed schema rejects a fourth. So the references are dropped here
-       * rather than widened into the domain behind the PRD's back. Reported
-       * as a Stage 5 contract conflict, not resolved silently.
+       * Stage 5.1 · The gate's missing items go through unchanged, claim
+       * references and all. Stage 5 projected them down to three fields here
+       * because `MissingItem` had no room for the fourth; it has room now, so
+       * there is nothing left to drop. The ids were resolved against this
+       * run's spine before this line, and the Decision's validator resolves
+       * them again against the version's own statements.
        */
-      const missing = gate.missing.map(({ item, whyItMatters, howToGetIt }) => ({
-        item,
-        whyItMatters,
-        howToGetIt,
-      }));
-
-      const outcome = refusal(gate.assessment, missing, recorder.snapshot());
+      const outcome = refusal(gate.assessment, gate.missing, recorder.snapshot());
 
       // CAP-18: "the decision enters an explicit awaiting-evidence state" and
       // "remains a real object, not a failed attempt". No verdict, no

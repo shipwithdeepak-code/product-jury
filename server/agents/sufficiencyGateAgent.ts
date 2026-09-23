@@ -140,11 +140,6 @@ export interface SufficiencyGateInput {
   recorder: RunRecorder;
 }
 
-/** A missing item, plus the statements the gate says it undermines. */
-export interface GateMissingItem extends MissingItem {
-  bearsOnClaims: ClaimId[];
-}
-
 /**
  * What the gate decided. The assessment inside it is the product's record that
  * an assessment actually completed — `refusal()` will not build an
@@ -152,7 +147,7 @@ export interface GateMissingItem extends MissingItem {
  */
 export type SufficiencyGateResult =
   | { sufficient: true; assessment: SufficiencyAssessment }
-  | { sufficient: false; assessment: SufficiencyAssessment; missing: GateMissingItem[] };
+  | { sufficient: false; assessment: SufficiencyAssessment; missing: MissingItem[] };
 
 function violation(detail: string): ProductJuryError {
   return new ProductJuryError('SCHEMA_VIOLATION', {
@@ -222,8 +217,8 @@ Produce your assessment adhering strictly to the JSON schema.`;
     return { sufficient: true, assessment };
   }
 
-  const missing: GateMissingItem[] = parsed.missing.map((raw, index) => {
-    const entry = raw as Partial<GateMissingItem> | null;
+  const missing: MissingItem[] = parsed.missing.map((raw, index) => {
+    const entry = raw as Partial<MissingItem> | null;
     const at = `missing[${index}]`;
 
     const item = requireText(entry?.item, `${at}.item names nothing specific`);

@@ -1,3 +1,5 @@
+import type { ClaimId } from './claims';
+
 export type Verdict = 'SHIP' | 'ITERATE' | 'TEST' | 'KILL';
 
 export {
@@ -256,6 +258,15 @@ export interface MissingItem {
   item: string;
   whyItMatters: string;
   howToGetIt: string;
+  /*
+   * Stage 5.1 · CAP-18. The statements this gap undermines.
+   *
+   * Required, and `[]` when the gap bears on no statement in particular. It is
+   * required rather than optional because an optional field is a field a
+   * caller can omit without anything noticing — which is exactly the silent
+   * discard this closure exists to end.
+   */
+  bearsOnClaims: ClaimId[];
 }
 
 export interface StageProvenance {

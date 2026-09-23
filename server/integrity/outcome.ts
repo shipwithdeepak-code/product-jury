@@ -23,6 +23,7 @@
 import { ProductJuryError, FailureCode, isProductJuryError } from './errors';
 import type { RunProvenance } from './provenance';
 import type { Decision } from '../../src/types/decision';
+import type { ClaimId } from '../../src/types/claims';
 
 export type RunOutcomeKind = 'VERDICT' | 'INSUFFICIENT' | 'FAILED';
 
@@ -34,6 +35,15 @@ export interface MissingItem {
   whyItMatters: string;
   /** The cheapest way to get it. */
   howToGetIt: string;
+  /**
+   * Stage 5.1 · CAP-18. The statements this gap undermines, and `[]` when it
+   * undermines none in particular.
+   *
+   * The gate resolves every id against the run's spine before it builds one of
+   * these, and the Decision's validator resolves them again against the
+   * version's own statements. Neither end repairs, drops or substitutes an id.
+   */
+  bearsOnClaims: ClaimId[];
 }
 
 /**
@@ -149,6 +159,18 @@ export function refusal(
     if (!entry?.item?.trim() || !entry?.whyItMatters?.trim() || !entry?.howToGetIt?.trim()) {
       throw new RefusalIntegrityError(
         'Each missing item must say what is missing, why it matters and how to get it (CAP-18).'
+      );
+    }
+    /*
+     * Stage 5.1 · The field is present or the refusal is not built. There is
+     * no spine here to resolve the ids against — that is the gate's job on the
+     * way in and the Decision validator's job on the way out — but an item
+     * that simply omitted the relationship would be the silent discard
+     * wearing a different shape.
+     */
+    if (!Array.isArray(entry.bearsOnClaims)) {
+      throw new RefusalIntegrityError(
+        'Each missing item must say which statements it bears on, or say so with an empty list (CAP-18).'
       );
     }
   }

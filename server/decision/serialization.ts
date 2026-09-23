@@ -254,7 +254,20 @@ function validateRunMeta(raw: unknown, label: string, errors: string[]): void {
   });
 }
 
-function validateOutcome(raw: unknown, label: string, errors: string[]): void {
+/**
+ * Stage 5.1 · The outcome is validated against the version's own statements,
+ * not against its shape alone.
+ *
+ * `spine` is undefined only when the spine itself failed to validate — that
+ * failure is already an error, and resolving citations against a spine that
+ * does not exist would bury it under a second one.
+ */
+function validateOutcome(
+  raw: unknown,
+  label: string,
+  errors: string[],
+  spine?: ClaimSpine
+): void {
   if (!isObject(raw)) {
     errors.push(`${label} is not an object`);
     return;
@@ -271,11 +284,40 @@ function validateOutcome(raw: unknown, label: string, errors: string[]): void {
     } else {
       raw.missing.forEach((item, index) => {
         const itemLabel = `${label}.missing[${index}]`;
-        if (!closedSchema(item, ['item', 'whyItMatters', 'howToGetIt'], itemLabel, errors)) return;
+        if (
+          !closedSchema(item, ['item', 'whyItMatters', 'howToGetIt', 'bearsOnClaims'], itemLabel, errors)
+        ) {
+          return;
+        }
         const missing = item as Record<string, unknown>;
         requireString(missing.item, `${itemLabel}.item`, errors);
         requireString(missing.whyItMatters, `${itemLabel}.whyItMatters`, errors);
         requireString(missing.howToGetIt, `${itemLabel}.howToGetIt`, errors);
+
+        /*
+         * CAP-18, Stage 5.1. The gate says which statements a gap undermines,
+         * and the relationship is stored rather than validated and thrown
+         * away. An empty list is a real answer — the gap bears on nothing in
+         * particular — so it is required and allowed to be empty.
+         *
+         * The resolution rule is FR-9's, unchanged: an id resolves against
+         * this version's own statements or the decision does not validate.
+         * Nothing is repaired, dropped or substituted.
+         */
+        if (!Array.isArray(missing.bearsOnClaims)) {
+          errors.push(
+            `${itemLabel}.bearsOnClaims must be a list of statement ids, empty if the gap bears on none`
+          );
+        } else if (spine) {
+          for (const claimId of missing.bearsOnClaims as unknown[]) {
+            if (typeof claimId !== 'string' || !spine.has(claimId)) {
+              errors.push(
+                `${itemLabel} bears on ${String(claimId)}, which is not a statement in this version. ` +
+                  'The reference is not dropped and no other statement is substituted.'
+              );
+            }
+          }
+        }
       });
     }
   } else if (kind === 'FAILED') {
@@ -332,7 +374,6 @@ function validateVersion(
 
   validateVerdict(value.verdict, `${label}.verdict`, errors);
   validateRunMeta(value.runMeta, `${label}.runMeta`, errors);
-  validateOutcome(value.outcome, `${label}.outcome`, errors);
 
   // The spine goes back through Stage 2's own boundary. Every claim is
   // revalidated, every id checked for uniqueness, every reference resolved.
@@ -344,6 +385,9 @@ function validateVersion(
       `${label}.claimSpine does not validate: ${error instanceof Error ? error.message : String(error)}`
     );
   }
+
+  // Stage 5.1: after the spine, because a refusal's missing items now cite it.
+  validateOutcome(value.outcome, `${label}.outcome`, errors, spine);
 
   if (!Array.isArray(value.specialistPositions)) {
     errors.push(`${label}.specialistPositions must be an array`);

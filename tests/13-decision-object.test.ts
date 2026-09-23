@@ -519,8 +519,8 @@ describe('O · a stage is never complete because an object exists', () => {
         kind: 'INSUFFICIENT',
         refusedAt: 'GATE',
         missing: [
-          { item: 'Where accounts stop in the wizard', whyItMatters: 'It decides what to change', howToGetIt: 'A funnel query' },
-          { item: 'Who holds CRM admin rights', whyItMatters: 'It decides whether the gate is real', howToGetIt: 'Ask five trial accounts' },
+          { item: 'Where accounts stop in the wizard', whyItMatters: 'It decides what to change', howToGetIt: 'A funnel query', bearsOnClaims: [] },
+          { item: 'Who holds CRM admin rights', whyItMatters: 'It decides whether the gate is real', howToGetIt: 'Ask five trial accounts', bearsOnClaims: [] },
         ],
       },
       clock: clockFrom(ROUND_TRIP_AT),
@@ -545,7 +545,7 @@ describe('O · a stage is never complete because an object exists', () => {
     const versions = stored.versions as Record<string, unknown>[];
     versions[0] = {
       ...versions[0],
-      outcome: { kind: 'INSUFFICIENT', refusedAt: 'GATE', missing: [{ item: 'a', whyItMatters: 'b', howToGetIt: 'c' }] },
+      outcome: { kind: 'INSUFFICIENT', refusedAt: 'GATE', missing: [{ item: 'a', whyItMatters: 'b', howToGetIt: 'c', bearsOnClaims: [] }] },
     };
     expect(() => deserializeDecision(stored)).toThrow(/at least two specific missing items/);
   });
@@ -1166,6 +1166,138 @@ describe('Z · the transient result becomes a Decision, or says why it cannot', 
 });
 
 // Regressions the brief names explicitly.
+/**
+ * Stage 5.1 · CAP-18 contract closure.
+ *
+ * A missing item now says which statements the gap undermines. The point of
+ * storing it is that the relationship survives being written down: a PM
+ * reading the decision back in six weeks can see which of their own statements
+ * the refusal was about. Everything below is one way of losing that.
+ */
+describe('AA · a missing item carries the statements it bears on', () => {
+  function refusedDecision(
+    missing: { item: string; whyItMatters: string; howToGetIt: string; bearsOnClaims: string[] }[]
+  ): Decision {
+    const record = richRecord();
+    return createDecision({
+      decisionQuestion: QUESTION,
+      claimSpine: record.spine.toJSON(),
+      specialistPositions: record.positions,
+      runMeta: record.runMeta,
+      outcome: { kind: 'INSUFFICIENT', refusedAt: 'GATE', missing } as never,
+      clock: clockFrom(ROUND_TRIP_AT),
+    });
+  }
+
+  const twoGaps = (first: string[], second: string[] = []) => [
+    {
+      item: 'Where trial accounts stop in the wizard',
+      whyItMatters: 'The call turns on whether the credential gate is where they leave.',
+      howToGetIt: 'One funnel query over the five steps.',
+      bearsOnClaims: first,
+    },
+    {
+      item: 'What the current activation rate is',
+      whyItMatters: 'Without a baseline, a redesign cannot be judged against anything.',
+      howToGetIt: 'The same dashboard, one number.',
+      bearsOnClaims: second,
+    },
+  ];
+
+  it('round-trips valid claim references through the serializer', () => {
+    const record = richRecord();
+    const [first, second] = record.spine.surfaced();
+    const decision = refusedDecision(twoGaps([first.id], [second.id, first.id]));
+
+    const stored = serializeDecision(decision);
+    const read = deserializeDecision(stored);
+    const outcome = read.versions[0].outcome;
+    if (outcome.kind !== 'INSUFFICIENT') throw new Error('expected an INSUFFICIENT version');
+
+    expect(outcome.missing[0].bearsOnClaims).toEqual([first.id]);
+    expect(outcome.missing[1].bearsOnClaims).toEqual([second.id, first.id]);
+  });
+
+  it('resolves every reference against this version\'s own statements', () => {
+    const record = richRecord();
+    const decision = refusedDecision(twoGaps([record.spine.surfaced()[0].id]));
+    const outcome = decision.versions[0].outcome;
+    if (outcome.kind !== 'INSUFFICIENT') throw new Error('expected an INSUFFICIENT version');
+
+    for (const cited of outcome.missing.flatMap((gap) => gap.bearsOnClaims)) {
+      expect(record.spine.has(cited)).toBe(true);
+    }
+  });
+
+  it('fails closed on a reference to a statement this version does not have', () => {
+    // A well-formed id from another run. Not repaired, not dropped, not
+    // swapped for the nearest statement: the decision does not validate.
+    const foreign = richRecord('run-somewhere-else').spine.surfaced()[0].id;
+    expect(() => refusedDecision(twoGaps([foreign]))).toThrow(DecisionValidationError);
+    expect(() => refusedDecision(twoGaps([foreign]))).toThrow(/is not a statement in this version/);
+  });
+
+  it('fails closed on a reference that is not a statement id at all', () => {
+    expect(() => refusedDecision(twoGaps(['the drop-off claim']))).toThrow(
+      DecisionValidationError
+    );
+  });
+
+  it('fails closed when the field is absent rather than empty', () => {
+    const record = richRecord();
+    const stored = serializeDecision(
+      refusedDecision(twoGaps([record.spine.surfaced()[0].id]))
+    ) as unknown as Record<string, unknown>;
+    const versions = stored.versions as Record<string, unknown>[];
+    const outcome = versions[0].outcome as Record<string, unknown>;
+    const missing = (outcome.missing as Record<string, unknown>[]).map(
+      ({ item, whyItMatters, howToGetIt }) => ({ item, whyItMatters, howToGetIt })
+    );
+    versions[0] = { ...versions[0], outcome: { ...outcome, missing } };
+
+    // The Stage 5 shape — three fields — is now an incomplete record, not a
+    // tolerated one. This is the assertion that would have caught the silent
+    // discard if it had been left in.
+    expect(() => deserializeDecision(stored)).toThrow(/bearsOnClaims/);
+  });
+
+  it('keeps an empty list valid: a gap may bear on no statement in particular', () => {
+    const decision = refusedDecision(twoGaps([], []));
+    const outcome = deserializeDecision(serializeDecision(decision)).versions[0].outcome;
+    if (outcome.kind !== 'INSUFFICIENT') throw new Error('expected an INSUFFICIENT version');
+    expect(outcome.missing.every((gap) => gap.bearsOnClaims.length === 0)).toBe(true);
+  });
+
+  it('still requires at least two missing items (FR-15)', () => {
+    const record = richRecord();
+    expect(() => refusedDecision(twoGaps([record.spine.surfaced()[0].id]).slice(0, 1))).toThrow(
+      /at least two specific missing items/
+    );
+  });
+
+  it('leaves FAILED untouched: it has no missing items to carry references', () => {
+    const record = richRecord();
+    const broken = createDecision({
+      decisionQuestion: QUESTION,
+      claimSpine: record.spine.toJSON(),
+      specialistPositions: record.positions,
+      runMeta: record.runMeta,
+      outcome: {
+        kind: 'FAILED',
+        code: 'PROVIDER_UNAVAILABLE',
+        userMessage: 'The provider did not answer.',
+        retryable: true,
+        stage: 'gate',
+      },
+      clock: clockFrom(ROUND_TRIP_AT),
+    });
+    const read = deserializeDecision(serializeDecision(broken));
+    expect(read.versions[0].outcome.kind).toBe('FAILED');
+    expect(decisionState(read)).toBe('failed');
+    expect(read.versions[0].outcome).not.toHaveProperty('missing');
+  });
+});
+
 describe('Stage 3 does not reopen anything Stages 1, 2 and 2.5 closed', () => {
   it('still refuses a specialist citation that does not resolve', () => {
     const spine = richRecord().spine;
@@ -1213,8 +1345,8 @@ describe('Stage 3 does not reopen anything Stages 1, 2 and 2.5 closed', () => {
         kind: 'INSUFFICIENT',
         refusedAt: 'CEILING',
         missing: [
-          { item: 'Where accounts stop', whyItMatters: 'It decides what to change', howToGetIt: 'A funnel query' },
-          { item: 'Who holds admin rights', whyItMatters: 'It decides whether the gate is real', howToGetIt: 'Ask five accounts' },
+          { item: 'Where accounts stop', whyItMatters: 'It decides what to change', howToGetIt: 'A funnel query', bearsOnClaims: [] },
+          { item: 'Who holds admin rights', whyItMatters: 'It decides whether the gate is real', howToGetIt: 'Ask five accounts', bearsOnClaims: [] },
         ],
       },
       clock: clockFrom(ROUND_TRIP_AT),

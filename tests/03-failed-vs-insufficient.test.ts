@@ -42,11 +42,13 @@ const twoMissing: MissingItem[] = [
     item: 'A drop-off rate for the step in question',
     whyItMatters: 'The decision turns on whether this step is where users leave.',
     howToGetIt: 'One funnel query in your analytics tool.',
+    bearsOnClaims: [],
   },
   {
     item: 'What the current activation rate is',
     whyItMatters: 'Without a baseline, an improvement cannot be judged.',
     howToGetIt: 'The same dashboard, one number.',
+    bearsOnClaims: [],
   },
 ];
 

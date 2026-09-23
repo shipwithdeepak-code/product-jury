@@ -13,7 +13,7 @@ import { isFailed, isInsufficient, isVerdict } from '../server/integrity/outcome
 import { validateEvent } from '../server/integrity/telemetry';
 import { serializeDecision } from '../server/decision/serialization';
 import { caught } from './helpers';
-import type { AnalystReading, ProductContext } from '../src/types';
+import type { AnalystReading, InsufficientRun, ProductContext } from '../src/types';
 import { E_MIXED_ARTIFACT } from '../evaluation/fixtures/analyst-readings';
 
 /**
@@ -715,6 +715,96 @@ describe('35 · X, Y, Z · telemetry, untrusted content, and no second pipeline'
       expect(source).not.toContain('decisionFromRun');
       expect(source).not.toContain('runSufficiencyGate');
     }
+  });
+});
+
+/**
+ * Stage 5.1 · CAP-18 contract closure.
+ *
+ * Stage 5 validated the claim references the gate produced and then dropped
+ * them at the outcome boundary, because `MissingItem` had no room for them.
+ * It has room now. These tests exist to prove the whole route, because a
+ * relationship that is generated and discarded is worse than one that was
+ * never asked for: the product looks as though it knows something it has
+ * thrown away.
+ */
+describe('37 · the gate\'s claim references survive the whole way', () => {
+  it('carries the gate\'s ids into the outcome, unchanged', async () => {
+    const spine = spineForRun();
+    const cited = spine.surfaced()[0].id;
+    const { run } = pipeline({ gate: refusalBody(spine) });
+    const outcome = await run();
+    if (!isInsufficient(outcome)) throw new Error('expected a refusal');
+
+    expect(outcome.missing[0].bearsOnClaims).toEqual([cited]);
+    // The second gap bears on nothing in particular, and says so.
+    expect(outcome.missing[1].bearsOnClaims).toEqual([]);
+  });
+
+  it('carries them into the Decision, through the serializer', async () => {
+    const spine = spineForRun();
+    const cited = spine.surfaced()[0].id;
+    const { run } = pipeline({ gate: refusalBody(spine) });
+    const outcome = await run();
+    if (!isInsufficient(outcome)) throw new Error('expected a refusal');
+    if (!outcome.decision) throw new Error('expected a decision');
+
+    // Out through the same closed validator the API writes through, and back.
+    const stored = serializeDecision(outcome.decision);
+    const version = stored.versions[0].outcome;
+    if (version.kind !== 'INSUFFICIENT') throw new Error('expected an INSUFFICIENT version');
+
+    expect(version.missing[0].bearsOnClaims).toEqual([cited]);
+    expect(spine.has(version.missing[0].bearsOnClaims[0])).toBe(true);
+  });
+
+  it('sends them to the PM rather than stripping them at the API boundary', async () => {
+    const spine = spineForRun();
+    const { run } = pipeline({ gate: refusalBody(spine) });
+    const outcome = await run();
+    if (!isInsufficient(outcome)) throw new Error('expected a refusal');
+
+    /*
+     * What the INSUFFICIENT branch of `/api/review` sends is `outcome.missing`
+     * itself — the whole item, not a projection of it. The source assertion is
+     * the one that matters here: a projection reintroduced later would still
+     * pass a shape check on the object above.
+     */
+    const server = readFileSync(join(__dirname, '..', 'server.ts'), 'utf8');
+    expect(server).toMatch(/missing: outcome\.missing/);
+
+    const pmVisible: InsufficientRun = {
+      kind: 'INSUFFICIENT',
+      refusedAt: outcome.refusedAt,
+      missing: outcome.missing,
+      provenance: outcome.provenance,
+    };
+    expect(pmVisible.missing[0].bearsOnClaims).toHaveLength(1);
+  });
+
+  it('has nothing left in the orchestrator that drops them', () => {
+    // The Stage 5 projection, by shape: a map that rebuilds a missing item out
+    // of three of its four fields.
+    expect(ORCHESTRATOR).not.toMatch(/whyItMatters,\s*howToGetIt\s*\}\)\s*=>/);
+    expect(ORCHESTRATOR).toMatch(/refusal\(gate\.assessment, gate\.missing/);
+  });
+
+  it('still refuses an id this run does not have (unchanged from Stage 5)', async () => {
+    const spine = spineForRun();
+    const body = refusalBody(spine);
+    body.missing[0].bearsOnClaims = [spineForRun('another-run').surfaced()[0].id];
+    const { run } = pipeline({ gate: body });
+    const outcome = await run();
+
+    // Still FAILED, not a refusal with the citation quietly removed.
+    expect(isFailed(outcome)).toBe(true);
+  });
+
+  it('still requires two missing items, references or not', async () => {
+    const body = refusalBody();
+    body.missing = body.missing.slice(0, 1);
+    const { run } = pipeline({ gate: body });
+    expect(isFailed(await run())).toBe(true);
   });
 });
 
