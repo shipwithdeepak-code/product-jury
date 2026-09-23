@@ -10,6 +10,7 @@ import {
 } from '../server/integrity/untrusted';
 import { __setGenAIClientForTests, invokeGeminiJson } from '../server/geminiClient';
 import { buildSuppliedContent } from '../server/agents/promptContext';
+import { ClaimSpine } from '../server/claims/spine';
 import { MINIMAL_SCHEMA, shortRun, stubProvider } from './helpers';
 
 /**
@@ -137,7 +138,7 @@ describe('7 · untrusted content', () => {
         additionalContext: '',
       },
       '',
-      undefined
+      { spine: new ClaimSpine('untrusted-content-test') }
     );
 
     expect(built.block).toContain(UNTRUSTED_MARKERS.OPEN);

@@ -1,11 +1,11 @@
-import { ProductContext, ArtifactUnderstanding } from '../../src/types';
+import { ProductContext } from '../../src/types';
 import {
   EmbeddedInstructionObservation,
   detectEmbeddedInstructions,
   untrustedBlock,
 } from '../integrity/untrusted';
 import { ClaimSpine } from '../claims/spine';
-import { renderClaimBlock, spineFromUnderstanding } from '../claims/specialistInput';
+import { renderClaimBlock } from '../claims/specialistInput';
 
 /**
  * Stage 1 · One place where supplied content enters a prompt.
@@ -21,7 +21,7 @@ import { renderClaimBlock, spineFromUnderstanding } from '../claims/specialistIn
  * builds prompt text from user input. The instruction side of the prompt is
  * assembled from constants only.
  *
- * Stage 2 changes what is inside the block, not how it is delimited. The
+ * Stage 2 changed what is inside the block, not how it is delimited. The
  * artifact reading used to arrive as four lines of bare text —
  *
  *     Observed: the CTA is grey | the step count is five
@@ -31,13 +31,19 @@ import { renderClaimBlock, spineFromUnderstanding } from '../claims/specialistIn
  * addressable statement per line with its kind and its origin. The untrusted
  * handling is unchanged: it is still content read off someone else's screen,
  * and it is still confined to a delimited block in the user prompt.
+ *
+ * Stage 2.5 deleted the flattened path entirely. While it existed there were
+ * two renderings of the same statements and a run could quietly take the one
+ * with no ids in it, which is the one no position can cite. There is now one
+ * rendering, it always has ids, and a run that cannot produce a spine fails in
+ * the orchestrator rather than falling back to prose here.
  */
 
 export interface SuppliedContent {
   /** The prompt fragment, with every supplied value in a delimited block. */
   block: string;
-  /** The spine the block was rendered from, where one was available. */
-  spine?: ClaimSpine | null;
+  /** The spine the block was rendered from. */
+  spine: ClaimSpine;
   /** Raw supplied strings, for the SR-2 assertion in the provider client. */
   untrustedInputs: string[];
   /** SR-8: instructions found in supplied content, recorded as observations. */
@@ -46,18 +52,17 @@ export interface SuppliedContent {
 
 export interface SuppliedContentOptions {
   /**
-   * The Claim Spine for this run. Supplied by the orchestrator, which rebuilds
-   * it once and passes it to every stage so that all four agents address the
-   * same statements by the same ids.
+   * The Claim Spine for this run. Built once by the orchestrator and passed to
+   * every stage, so all four agents address the same statements by the same
+   * ids. Required: a stage that cannot see the statements cannot cite them.
    */
-  spine?: ClaimSpine | null;
+  spine: ClaimSpine;
 }
 
 export function buildSuppliedContent(
   context: ProductContext,
-  rawEvidence?: string,
-  artifactUnderstanding?: ArtifactUnderstanding,
-  options: SuppliedContentOptions = {}
+  rawEvidence: string | undefined,
+  options: SuppliedContentOptions
 ): SuppliedContent {
   const untrustedInputs: string[] = [];
   const observations: EmbeddedInstructionObservation[] = [];
@@ -80,24 +85,12 @@ export function buildSuppliedContent(
 
   /*
    * Artifact-derived statements are untrusted too: the analyst read them off a
-   * screen, so anything an attacker put on that screen is now in them. The
-   * spine is preferred when the reading carries one; the flattened arrays are
-   * the fallback for a reading produced before Stage 2, and for the sample.
+   * screen, so anything an attacker put on that screen is now in them.
    */
-  const spine = options.spine ?? spineFromUnderstanding(artifactUnderstanding);
+  const spine = options.spine;
 
-  const statements = spine
-    ? spine.surfaced().map((claim) => claim.text)
-    : artifactUnderstanding
-    ? [
-        ...(artifactUnderstanding.facts ?? []),
-        ...(artifactUnderstanding.inferences ?? []),
-        ...(artifactUnderstanding.assumptions ?? []),
-        ...(artifactUnderstanding.unknowns ?? []),
-      ]
-    : [];
-  for (const statement of statements) {
-    collect(statement, 'ARTIFACT_TEXT');
+  for (const claim of spine.surfaced()) {
+    collect(claim.text, 'ARTIFACT_TEXT');
   }
 
   const pmClaims = [
@@ -118,21 +111,9 @@ export function buildSuppliedContent(
       : 'No product context was supplied by the product manager.'
   );
 
-  if (spine) {
-    // Stage 2: addressable statements, each with its kind and its origin.
-    parts.push(untrustedBlock('ARTIFACT_TEXT', renderClaimBlock(spine)));
-  } else if (artifactUnderstanding) {
-    const understanding = [
-      `Product type read from the artifact: ${artifactUnderstanding.productType ?? 'not stated'}`,
-      `Observed: ${(artifactUnderstanding.facts ?? []).join(' | ') || 'none'}`,
-      `Inferred: ${(artifactUnderstanding.inferences ?? []).join(' | ') || 'none'}`,
-      `Assumed: ${(artifactUnderstanding.assumptions ?? []).join(' | ') || 'none'}`,
-      `Cannot be known from the artifact: ${(artifactUnderstanding.unknowns ?? []).join(' | ') || 'none'}`,
-    ].join('\n');
-    parts.push(untrustedBlock('ARTIFACT_TEXT', understanding));
-  } else {
-    parts.push('No artifact reading is available for this run.');
-  }
+  // Stage 2: addressable statements, each with its kind and its origin. There
+  // is no other shape these can arrive in.
+  parts.push(untrustedBlock('ARTIFACT_TEXT', renderClaimBlock(spine)));
 
   parts.push(
     rawEvidence && rawEvidence.trim().length > 0

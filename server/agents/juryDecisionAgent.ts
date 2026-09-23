@@ -192,8 +192,8 @@ VOICE, BINDING:
 export interface RunJuryDecisionInput {
   context: ProductContext;
   artifactUnderstanding?: ArtifactUnderstanding;
-  /** Stage 2 · The run's Claim Spine, rebuilt once by the orchestrator. */
-  spine?: ClaimSpine | null;
+  /** Stage 2 · The run's Claim Spine, built once by the orchestrator. */
+  spine: ClaimSpine;
   contextAlignment?: ContextAlignment;
   uxReview: UXResearchResult;
   strategyReview: ProductStrategyResult;
@@ -239,9 +239,7 @@ export async function runJuryDecisionAgent(input: RunJuryDecisionInput): Promise
     runId,
   } = input;
 
-  const supplied = buildSuppliedContent(context, rawEvidence, artifactUnderstanding, {
-    spine: input.spine,
-  });
+  const supplied = buildSuppliedContent(context, rawEvidence, { spine: input.spine });
 
   const promptText = `Synthesise the panel's position for this decision.
 

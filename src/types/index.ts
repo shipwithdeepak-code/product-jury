@@ -18,9 +18,15 @@ export type {
   OriginCoverage,
   OriginKind,
   SerializedClaimSpine,
+  SpecialistPosition,
 } from './claims';
 
-import type { CoreEpistemicStatus, OriginCoverage, SerializedClaimSpine } from './claims';
+import type {
+  CoreEpistemicStatus,
+  OriginCoverage,
+  SerializedClaimSpine,
+  SpecialistPosition,
+} from './claims';
 
 /**
  * The four kinds a PM sees. Stage 2 makes this an alias of the Claim Spine's
@@ -320,11 +326,14 @@ export interface UXResearchRisk {
   whyItMatters: string;
 }
 
-export interface AgentEvidenceItem {
-  claim: string;
-  status: EvidenceStatus;
-  source: string;
-}
+/**
+ * Stage 2.5 · FR-9. What each lens holds, and the statements it rests on.
+ *
+ * This replaces `AgentEvidenceItem`, which was a second evidence model: a lens
+ * restated a claim in its own words with a status it chose, and nothing
+ * connected that restatement to the statement it came from. A position cites
+ * claim ids instead, so the connection is the record rather than a resemblance.
+ */
 
 export interface UXResearchResult {
   agentRole: 'UX_RESEARCHER';
@@ -335,7 +344,8 @@ export interface UXResearchResult {
   researchQuestions: string[];
   recommendations: string[];
   confidence: number;
-  evidenceItems: AgentEvidenceItem[];
+  /** FR-9: at least one, each citing claims that resolve in the run's spine. */
+  positions: SpecialistPosition[];
 }
 
 export interface StrategicRisk {
@@ -363,7 +373,8 @@ export interface ProductStrategyResult {
   validationNeeds: string[];
   recommendations: string[];
   confidence: number;
-  evidenceItems: AgentEvidenceItem[];
+  /** FR-9: at least one, each citing claims that resolve in the run's spine. */
+  positions: SpecialistPosition[];
 }
 
 export interface EvidenceAuditResult {

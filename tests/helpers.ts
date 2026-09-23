@@ -42,3 +42,18 @@ export function caught(error: unknown): {
 } {
   return error as { code: string; retryable: boolean; userMessage: string; stage?: string };
 }
+
+/**
+ * The refusal's own words. A `ProductJuryError`'s message is the code and the
+ * stage; what was actually wrong is in its detail, and a test that asserts on
+ * the code alone would pass for the wrong reason.
+ */
+export function violationFrom(run: () => unknown): string {
+  try {
+    run();
+  } catch (error) {
+    const detail = (error as { detail?: { violation?: unknown } }).detail;
+    return String(detail?.violation ?? (error as Error).message);
+  }
+  throw new Error('expected the response to be refused, and it was not');
+}

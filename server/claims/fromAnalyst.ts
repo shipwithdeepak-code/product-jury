@@ -41,6 +41,21 @@ import type { OriginCoverage } from '../../src/types/claims';
 
 const STAGE = 'analyst';
 
+/*
+ * Stage 2.5 · Sub-stage labels, so the display projection can tell the three
+ * headline attributes and the friction signals apart from ordinary inferences
+ * without reading their text.
+ *
+ * Before this, `projectUnderstanding` matched claim text against the reading's
+ * own strings to work out which inference was the product type. That worked and
+ * would have broken the first time the phrasing changed. `producedBy` already
+ * names what made a statement, so it is the right field to say which part of
+ * the analyst made it; the origin's `stage` stays `analyst` throughout, because
+ * that is the pipeline stage.
+ */
+export const ANALYST_ATTRIBUTE_STAGE = 'analyst:attribute';
+export const ANALYST_FRICTION_STAGE = 'analyst:friction';
+
 function violation(detail: string): ProductJuryError {
   return new ProductJuryError('SCHEMA_VIOLATION', {
     stage: STAGE,
@@ -175,7 +190,7 @@ export function buildSpineFromAnalystReading(
           stage: STAGE,
         },
         confidence: requireConfidence(value.confidence, label),
-        producedBy: STAGE,
+        producedBy: ANALYST_ATTRIBUTE_STAGE,
       });
       refs.declare(value.ref, claim.id, label);
     };
@@ -200,7 +215,7 @@ export function buildSpineFromAnalystReading(
           runId,
           stage: STAGE,
         },
-        producedBy: STAGE,
+        producedBy: ANALYST_FRICTION_STAGE,
       });
       refs.declare(entry?.ref, claim.id, `frictionSignals[${index}]`);
     }

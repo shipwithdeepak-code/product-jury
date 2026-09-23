@@ -393,7 +393,7 @@ describe('17 · specialist adapter compatibility', () => {
       primaryGoal: 'Raise day-14 activation',
     };
 
-    const supplied = buildSuppliedContent(context, undefined, undefined, { spine });
+    const supplied = buildSuppliedContent(context, undefined, { spine });
 
     // FR-9 needs an addressable statement. The old shape — "Observed: a | b" —
     // gave a specialist nothing to cite.
@@ -492,7 +492,9 @@ describe('18 · supplied content stays separated from instructions', () => {
 
     for (const claim of spine.all()) {
       expect(claim.text).not.toMatch(/\b(SHIP|KILL|ITERATE)\b/);
-      expect(claim.producedBy).toBe('analyst');
+      // Every statement is the analyst's, including its two sub-stages. None
+      // is attributed to whoever wrote the text in the notes field.
+      expect(claim.producedBy.startsWith('analyst')).toBe(true);
     }
   });
 
@@ -500,7 +502,6 @@ describe('18 · supplied content stays separated from instructions', () => {
     const { spine } = buildSpineFromAnalystReading(reading(H_ARTIFACT_WITH_INSTRUCTIONS), RUN);
     const supplied = buildSuppliedContent(
       { name: 'Atlas', whatBuilding: 'x', targetUser: 'y', primaryGoal: 'z' },
-      undefined,
       undefined,
       { spine }
     );
@@ -525,7 +526,6 @@ describe('18 · supplied content stays separated from instructions', () => {
         targetUser: 'Ops managers',
         primaryGoal: 'Raise day-14 activation',
       },
-      undefined,
       undefined,
       { spine }
     );
@@ -613,9 +613,13 @@ describe('19 · Stage 1 failure states are unchanged', () => {
     ).toEqual(['cross_examination', 'gate', 'red_team'].sort());
   });
 
-  it('runs a reading that carries no spine without inventing one', async () => {
-    // A reading produced before Stage 2, or the bundled sample. It has no
-    // addressable statements, and that is a smaller reading, not a failure.
+  it('refuses a reading that carries no spine rather than flattening it', async () => {
+    /*
+     * Stage 2.5 changed this. While the flattened fallback existed, a reading
+     * with no spine ran anyway and the lenses read prose with no ids in it —
+     * a second shape for the same statements, and the one nothing can cite.
+     * A reading that Stage 2 did not produce is now a failure.
+     */
     const { client } = stubProvider(() => {
       throw new Error('503 overloaded');
     });
@@ -641,7 +645,7 @@ describe('19 · Stage 1 failure states are unchanged', () => {
 
     expect(isFailed(outcome)).toBe(true);
     if (!isFailed(outcome)) throw new Error('unreachable');
-    // It failed at the specialist on the provider error, not at the spine.
-    expect(outcome.code).not.toBe('SCHEMA_VIOLATION');
+    expect(outcome.code).toBe('SCHEMA_VIOLATION');
+    expect(outcome.stage).toBe('analyst');
   });
 });

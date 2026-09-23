@@ -170,6 +170,13 @@ export class ClaimSpine {
   /**
    * Record that something rests on a claim. This is the only way a claim
    * becomes load-bearing (§51 always-3, §42).
+   *
+   * Recording the edge and deriving the status are two steps, not one: the
+   * dependency is the fact, and load-bearing is read off it. Calling this twice
+   * with the same dependant records one edge, which is the spine's existing
+   * rule for a repeated reference — `unresolvedReferences` dedupes the same
+   * way. A statement produced twice is an error; a statement *referred to*
+   * twice is one reference.
    */
   recordDependency(claimId: ClaimId, dependant: ClaimDependant): Claim {
     const claim = this.resolve(claimId);
@@ -179,9 +186,37 @@ export class ClaimSpine {
     if (!already) {
       claim.supports.push(dependant);
     }
-    claim.loadBearing = 'LOAD_BEARING';
+    this.deriveLoadBearingFor(claim);
     assertValidClaim(claim, `claim(${claimId})`);
     return claim;
+  }
+
+  /**
+   * Stage 2.5 · Recompute load-bearing status from the dependency graph.
+   *
+   * The rule, in one line: a claim is load-bearing when something is recorded
+   * as resting on it. Nothing else sets the field — not a model, not a prompt,
+   * not a caller passing a flag — which is the distinction FR-9 and §42 turn
+   * on. A claim already settled as NOT_LOAD_BEARING by a stage that enumerated
+   * its dependants keeps that answer until something does depend on it.
+   *
+   * Idempotent, so a stage can call it after recording a batch of dependencies
+   * without having to know which claims it touched.
+   */
+  deriveLoadBearing(): Claim[] {
+    for (const claim of this.claims.values()) {
+      this.deriveLoadBearingFor(claim);
+    }
+    return this.loadBearingClaims();
+  }
+
+  private deriveLoadBearingFor(claim: Claim): void {
+    if (claim.supports.length > 0) {
+      claim.loadBearing = 'LOAD_BEARING';
+    } else if (claim.loadBearing === 'LOAD_BEARING') {
+      // The edges it rested on are gone, so the derived answer changes back.
+      claim.loadBearing = 'NOT_YET_DETERMINED';
+    }
   }
 
   /**

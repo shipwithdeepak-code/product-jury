@@ -96,8 +96,8 @@ AUDIT RULES:
 export interface RunEvidenceAuditorInput {
   context: ProductContext;
   artifactUnderstanding?: ArtifactUnderstanding;
-  /** Stage 2 · The run's Claim Spine, rebuilt once by the orchestrator. */
-  spine?: ClaimSpine | null;
+  /** Stage 2 · The run's Claim Spine, built once by the orchestrator. */
+  spine: ClaimSpine;
   uxReview?: UXResearchResult;
   strategyReview?: ProductStrategyResult;
   rawEvidence?: string;
@@ -128,9 +128,7 @@ export async function runEvidenceAuditorAgent(
   const { context, artifactUnderstanding, uxReview, strategyReview, rawEvidence, budget, recorder } =
     input;
 
-  const supplied = buildSuppliedContent(context, rawEvidence, artifactUnderstanding, {
-    spine: input.spine,
-  });
+  const supplied = buildSuppliedContent(context, rawEvidence, { spine: input.spine });
 
   const panelPositions = [
     uxReview

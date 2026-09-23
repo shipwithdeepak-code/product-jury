@@ -2,6 +2,7 @@ import { ArtifactUnderstanding, AnalystReading } from '../../src/types';
 import { Claim, EpistemicStatus } from '../../src/types/claims';
 import { ClaimSpine } from './spine';
 import { measureOriginCoverage } from './originCoverage';
+import { ANALYST_ATTRIBUTE_STAGE, ANALYST_FRICTION_STAGE } from './fromAnalyst';
 
 /**
  * Stage 2 · The adapter between the Claim Spine and everything downstream.
@@ -146,23 +147,26 @@ export function projectUnderstanding(
       .filter((claim) => claim.surfaced)
       .map((claim) => claim.text);
 
+  /*
+   * Stage 2.5 · Structural, not textual.
+   *
+   * The three headline attributes and the friction signals are inferences with
+   * their own place in the interface, so they are not repeated in the general
+   * inference list. Which is which is read off `producedBy` — the field that
+   * records what made the statement — rather than by comparing claim text with
+   * the reading's own strings, which is what this did before and which would
+   * have broken silently the first time a phrasing changed.
+   */
   const inferences = spine
     .byStatus('INFERENCE')
     .filter((claim) => claim.surfaced);
-
-  const frictionTexts = new Set((reading.frictionSignals ?? []).map((signal) => signal.signal));
-  const attributeTexts = new Set(
-    [reading.productType, reading.likelyUser, reading.primaryJourney]
-      .filter(Boolean)
-      .map((attribute) => attribute.value)
-  );
 
   return {
     productType: reading.productType?.value ?? '',
     likelyUser: reading.likelyUser?.value ?? '',
     detectedJourney: reading.primaryJourney?.value ?? '',
     frictionSignals: inferences
-      .filter((claim) => frictionTexts.has(claim.text))
+      .filter((claim) => claim.producedBy === ANALYST_FRICTION_STAGE)
       .map((claim) => claim.text),
     facts: textOf('FACT'),
     // The three headline attributes are inferences too, and they are already
@@ -170,8 +174,8 @@ export function projectUnderstanding(
     inferences: inferences
       .filter(
         (claim) =>
-          !frictionTexts.has(claim.text) &&
-          ![...attributeTexts].some((value) => claim.text.endsWith(`: ${value}`))
+          claim.producedBy !== ANALYST_FRICTION_STAGE &&
+          claim.producedBy !== ANALYST_ATTRIBUTE_STAGE
       )
       .map((claim) => claim.text),
     assumptions: textOf('ASSUMPTION'),

@@ -115,3 +115,42 @@ export function isClaimId(value: unknown): value is ClaimId {
 }
 
 export const CLAIM_ID_PATTERN = ID_PATTERN;
+
+/**
+ * Stage 2.5 · The identity of a specialist position.
+ *
+ * `POS-` followed by 26 base32 characters, derived the same way a claim id is:
+ * a digest of the run, the stage and the normalised position text. The reasons
+ * are the reasons above — a position must be nameable by the claims it cites,
+ * it must come back identical when the same response is rebuilt, and an index
+ * into an array is not an identity.
+ *
+ * It is a different prefix because a position is not a claim. `isClaimId`
+ * rejects it, so a position id can never be passed off as a statement.
+ */
+const POSITION_PREFIX = 'POS-';
+const POSITION_PATTERN = new RegExp(`^${POSITION_PREFIX}[a-z2-7]{${ID_BODY_LENGTH}}$`);
+
+export function mintPositionId(input: {
+  runId: string;
+  producedBy: string;
+  text: string;
+}): string {
+  const digest = createHash('sha256')
+    .update(input.runId)
+    .update('\u0000')
+    .update(input.producedBy)
+    .update('\u0000')
+    .update('SPECIALIST_POSITION')
+    .update('\u0000')
+    .update(normaliseClaimText(input.text))
+    .digest();
+
+  return POSITION_PREFIX + base32(digest, ID_BODY_LENGTH);
+}
+
+export function isPositionId(value: unknown): value is string {
+  return typeof value === 'string' && POSITION_PATTERN.test(value);
+}
+
+export const POSITION_ID_PATTERN = POSITION_PATTERN;

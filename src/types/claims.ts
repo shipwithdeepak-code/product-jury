@@ -261,3 +261,34 @@ export interface OriginCoverage {
   threshold: number;
   passes: boolean;
 }
+
+/**
+ * Stage 2.5 · FR-9. A position one specialist lens took, and the statements it
+ * rests on.
+ *
+ * "Two specialist lenses take positions citing specific statements." Before
+ * this, a lens returned prose and the statements it had read were gone by the
+ * time anyone asked what the position was based on. A position now names the
+ * claims it relies on, by id, and those ids are resolved against the run's
+ * spine before the position is allowed any further.
+ *
+ * This is not a second claim model. A position is not a claim: it is a piece of
+ * reasoning that *depends on* claims, which is why it carries ids rather than
+ * text, and why each dependency is recorded on the claim it cites.
+ */
+export interface SpecialistPosition {
+  /**
+   * Derived from the run, the stage and the position text, the same way a
+   * claim id is derived. It is what `supports` names on each cited claim.
+   */
+  id: string;
+  /** What the lens holds. */
+  position: string;
+  /** Why it holds it, given the claims below. */
+  reasoning: string;
+  /** The claims it rests on. At least one, all resolving in the run's spine. */
+  citedClaims: ClaimId[];
+  /** The stage that took the position, e.g. `specialist_ux`. */
+  producedBy: string;
+  runId: string;
+}

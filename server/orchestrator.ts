@@ -83,16 +83,32 @@ export async function runProductJuryDeliberation(
     /*
      * CAP-03. One spine per run, built before any stage sees anything.
      *
-     * A reading produced before Stage 2, or the bundled sample, carries no
-     * spine. That is not an error — it is a reading with no addressable
-     * statements, and the prompt builder falls back to the flattened view for
-     * it. What is an error is a spine that does not validate, which throws here
-     * and fails the run.
+     * Stage 2.5 makes this unconditional. Previously a reading that carried no
+     * spine produced a null one and the prompt builder rendered the flattened
+     * view instead — two shapes for the same statements, and the second had no
+     * ids in it, so a lens reading it could cite nothing. There is now one
+     * shape:
+     *
+     *   - a reading carrying a spine: rebuilt and revalidated here;
+     *   - a reading carrying none: a schema violation, because a reading
+     *     without addressable statements is a reading Stage 2 did not produce;
+     *   - no reading at all (no artifact was supplied): a fresh spine, which
+     *     the PM's own statements go into below. Not an error, and not empty.
      */
-    let spine: ClaimSpine | null = null;
+    let spine: ClaimSpine;
     try {
-      spine = spineFromUnderstanding(artifactUnderstanding);
+      const rebuilt = spineFromUnderstanding(artifactUnderstanding);
+      if (!rebuilt && artifactUnderstanding) {
+        throw new ProductJuryError('SCHEMA_VIOLATION', {
+          stage: 'analyst',
+          detail: {
+            violation: 'the artifact reading carries no claim spine, so its statements cannot be cited',
+          },
+        });
+      }
+      spine = rebuilt ?? new ClaimSpine(recorder.id);
     } catch (error) {
+      if (isProductJuryError(error)) throw error;
       throw new ProductJuryError('SCHEMA_VIOLATION', {
         stage: 'analyst',
         detail: {
@@ -103,19 +119,17 @@ export async function runProductJuryDeliberation(
       });
     }
 
-    if (spine) {
-      // CAP-03: the PM's own words are statements too, and are filed as the
-      // PM's rather than promoted to observations.
-      addPmContextClaims(spine, context, rawEvidence);
-      const coverage = measureOriginCoverage(spine);
-      if (!coverage.passes) {
-        throw new ProductJuryError('SCHEMA_VIOLATION', {
-          stage: 'analyst',
-          detail: {
-            violation: `${coverage.uncovered.length} statements carry no usable origin`,
-          },
-        });
-      }
+    // CAP-03: the PM's own words are statements too, and are filed as the
+    // PM's rather than promoted to observations.
+    addPmContextClaims(spine, context, rawEvidence);
+    const coverage = measureOriginCoverage(spine);
+    if (!coverage.passes) {
+      throw new ProductJuryError('SCHEMA_VIOLATION', {
+        stage: 'analyst',
+        detail: {
+          violation: `${coverage.uncovered.length} statements carry no usable origin`,
+        },
+      });
     }
 
     // Phase 1 — the two lenses. Run in parallel; either failing fails the run.
