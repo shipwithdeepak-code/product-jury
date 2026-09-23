@@ -138,7 +138,7 @@ describe('7 · untrusted content', () => {
         additionalContext: '',
       },
       '',
-      { spine: new ClaimSpine('untrusted-content-test') }
+      { spine: new ClaimSpine('untrusted-content-test'), decisionQuestion: 'Should we ship the redesigned export flow before the Q4 freeze?' }
     );
 
     expect(built.block).toContain(UNTRUSTED_MARKERS.OPEN);

@@ -3,6 +3,9 @@ import path from 'path';
 import { createServer as createViteServer } from 'vite';
 import { analyzeArtifactWithGemini, compareContextWithGemini } from './server/contextAnalystService';
 import { runProductJuryDeliberation } from './server/orchestrator';
+import { proposeDecisionQuestion } from './server/agents/decisionQuestionAgent';
+import { serializeDecision } from './server/decision/serialization';
+import type { DecisionQuestionOffer } from './src/types';
 import { ProductJuryError, classifyProviderError, isProductJuryError } from './server/integrity/errors';
 import { DecisionBudget } from './server/integrity/budget';
 import { RunRecorder } from './server/integrity/provenance';
@@ -94,6 +97,40 @@ async function startServer() {
         recorder,
       });
 
+      /*
+       * Stage 4 · CAP-04 behaviour 1, proposed here rather than behind a route
+       * of its own.
+       *
+       * The trigger is "after understanding, before any judgement", and the
+       * understanding is the spine that has just been built. Proposing here
+       * means the question is read off the statements that exist in this
+       * process, in this run, under this recorder — no second artifact
+       * analysis, and no round trip that would have to send the spine back to
+       * the server to be revalidated.
+       *
+       * A failure here does NOT fail the reading. CAP-04's failure state is
+       * "the PM writes it unaided with an example shown. The requirement is
+       * never waived" — so the reading is returned with the real reason the
+       * proposal is absent, and the workspace puts the PM on the manual path.
+       * Nothing is generated locally to stand in for the model.
+       */
+      let decisionQuestion: DecisionQuestionOffer;
+      try {
+        decisionQuestion = {
+          proposal: await proposeDecisionQuestion({ spine, budget, recorder }),
+          unavailable: null,
+        };
+      } catch (error) {
+        const pjError = isProductJuryError(error)
+          ? error
+          : classifyProviderError(error, 'decision_question');
+        console.error(`[api] question proposal unavailable code=${pjError.code}`);
+        decisionQuestion = {
+          proposal: null,
+          unavailable: { code: pjError.code, userMessage: pjError.userMessage },
+        };
+      }
+
       return res.json({
         success: true,
         outcome: 'VERDICT',
@@ -105,6 +142,9 @@ async function startServer() {
          */
         understanding: projectUnderstanding(spine, analysis),
         originCoverage,
+        // CAP-04: a proposal, or the honest absence of one. Never both, and
+        // never a sentence the product composed.
+        decisionQuestion,
         // SR-8: instructions found in the input travel to the client as
         // observations about the input.
         observations,
@@ -153,10 +193,25 @@ async function startServer() {
    */
   app.post('/api/jury/deliberate', rateLimit('deliberate'), async (req, res) => {
     try {
-      const { context, rawEvidence } = req.body ?? {};
+      const { context, rawEvidence, decisionQuestion } = req.body ?? {};
 
       if (!context || typeof context !== 'object') {
         throw new ProductJuryError('INVALID_REQUEST', { detail: { field: 'context' } });
+      }
+
+      /*
+       * CAP-04, FR-4. Required before any judgement, and bounded like every
+       * other supplied string. It is read off the request rather than off
+       * `context`: the question belongs to the decision, not to the product.
+       */
+      const boundedQuestion = boundedText(
+        decisionQuestion,
+        'decisionQuestion',
+        PAYLOAD_LIMITS.maxContextFieldChars,
+        'chair'
+      );
+      if (!boundedQuestion) {
+        throw new ProductJuryError('INVALID_REQUEST', { detail: { field: 'decisionQuestion' } });
       }
 
       const boundedEvidence = boundedText(
@@ -178,6 +233,7 @@ async function startServer() {
 
       const outcome = await runProductJuryDeliberation({
         context,
+        decisionQuestion: boundedQuestion,
         rawEvidence: boundedEvidence || undefined,
       });
 
@@ -208,10 +264,20 @@ async function startServer() {
         });
       }
 
+      /*
+       * Stage 4 · The successful run IS a Decision now (§17, CAP-12). It is
+       * serialized through the Stage 3 validator on the way out, so a Decision
+       * that does not satisfy its own schema never reaches a client.
+       *
+       * `data` remains the review because the existing surfaces read it. It is
+       * the same verdict that is inside version 1 of the decision beside it,
+       * not a second one — see server/orchestrator.ts.
+       */
       return res.json({
         success: true,
         outcome: 'VERDICT',
-        data: outcome.data,
+        data: outcome.data.review,
+        decision: serializeDecision(outcome.data.decision),
         provenance: outcome.provenance,
       });
     } catch (error) {

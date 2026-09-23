@@ -3,7 +3,7 @@ import { UXResearchResult, ProductContext, ArtifactUnderstanding } from '../../s
 import { DecisionBudget } from '../integrity/budget';
 import { RunRecorder } from '../integrity/provenance';
 import { ProductJuryError } from '../integrity/errors';
-import { buildSuppliedContent } from './promptContext';
+import { DECISION_QUESTION_INSTRUCTION, buildSuppliedContent } from './promptContext';
 import type { ClaimSpine } from '../claims/spine';
 import { groundSpecialistPositions } from '../claims/positions';
 
@@ -142,6 +142,11 @@ export interface RunUXResearcherInput {
   spine: ClaimSpine;
   budget: DecisionBudget;
   recorder: RunRecorder;
+  /**
+   * Stage 4 · CAP-04 behaviour 7. The PM's confirmed decision question. This
+   * stage answers it rather than the artifact in general.
+   */
+  decisionQuestion: string;
 }
 
 /**
@@ -158,7 +163,10 @@ export interface RunUXResearcherInput {
 export async function runUXResearcherAgent(input: RunUXResearcherInput): Promise<UXResearchResult> {
   const { context, rawEvidence, artifactUnderstanding, budget, recorder } = input;
 
-  const supplied = buildSuppliedContent(context, rawEvidence, { spine: input.spine });
+  const supplied = buildSuppliedContent(context, rawEvidence, {
+    spine: input.spine,
+    decisionQuestion: input.decisionQuestion,
+  });
 
   const promptText = `Evaluate this product experience from a rigorous UX research perspective.
 
@@ -169,7 +177,16 @@ ${supplied.block}
 Deliver your UX research analysis adhering strictly to the JSON schema.`;
 
   const result = await invokeGeminiJson<UXResearchResult>({
-    systemInstruction,
+    /*
+     * Stage 4 · CAP-04's brief, appended rather than interpolated into the
+     * literal above. Suite 12 forbids any interpolation inside the
+     * `systemInstruction` literal — SR-2's rule is that nothing *supplied*
+     * reaches instruction context, and the way that rule is enforced is by
+     * allowing no interpolation there at all. This is a module constant with
+     * no supplied value anywhere in it, and it is joined here so the literal
+     * stays inspectable.
+     */
+    systemInstruction: `${systemInstruction}\n\n${DECISION_QUESTION_INSTRUCTION}`,
     prompt: promptText,
     schema: uxResearcherSchema,
     temperature: 0.25,

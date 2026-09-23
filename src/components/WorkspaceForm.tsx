@@ -1,5 +1,6 @@
 import React, { useRef, useState } from 'react';
-import { ProductContext, ArtifactUnderstanding } from '../types';
+import { ProductContext, ArtifactUnderstanding, DecisionQuestionOffer } from '../types';
+import type { EditDistanceBand } from '../integrity/decisionQuestion';
 import {
   Upload,
   Link2,
@@ -27,6 +28,7 @@ import {
   sampleRawEvidence,
 } from '../data/sampleReview';
 import { ArtifactUnderstandingCard } from './ArtifactUnderstandingCard';
+import { DecisionQuestionCard } from './DecisionQuestionCard';
 import { ContextAlignmentCard } from './ContextAlignmentCard';
 import { analyzeArtifactViaServer, compareContextViaServer } from '../services/contextAnalystClient';
 import { SAMPLE_PRESETS, SamplePreset } from '../utils/sampleImageGenerator';
@@ -41,6 +43,15 @@ interface WorkspaceFormProps {
   isLoading: boolean;
   onPreloadSample: () => void;
   onResetWorkspace?: () => void;
+  /**
+   * Stage 4 · CAP-04. The wording the PM has confirmed, held by the app rather
+   * than by this form, and deliberately not part of `context`: the question
+   * identifies the decision, not the product.
+   */
+  decisionQuestion: string | null;
+  onConfirmDecisionQuestion: (question: string, band: EditDistanceBand) => void;
+  /** §55: `question_proposed`, emitted when a proposal actually arrives. */
+  onQuestionProposed: () => void;
   /**
    * PR-1 (launch blocker). Every path that is about to send an artifact to the
    * provider goes through this first. It calls back once this browser has been
@@ -58,6 +69,9 @@ export const WorkspaceForm: React.FC<WorkspaceFormProps> = ({
   isLoading,
   onPreloadSample,
   onResetWorkspace,
+  decisionQuestion,
+  onConfirmDecisionQuestion,
+  onQuestionProposed,
   requestUploadConsent,
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -70,6 +84,12 @@ export const WorkspaceForm: React.FC<WorkspaceFormProps> = ({
   const [isComparingContext, setIsComparingContext] = useState(false);
   const [contextComparisonError, setContextComparisonError] = useState<string | null>(null);
   const [compareSuccessStatus, setCompareSuccessStatus] = useState<string | null>(null);
+  /*
+   * CAP-04. What the analyst step said about the decision question: a proposal,
+   * or the honest absence of one. `null` means no artifact has been read yet,
+   * which is a third state and not a failure.
+   */
+  const [questionOffer, setQuestionOffer] = useState<DecisionQuestionOffer | null>(null);
   const [userEditedFields, setUserEditedFields] = useState<{
     name?: boolean;
     whatBuilding?: boolean;
@@ -108,6 +128,7 @@ export const WorkspaceForm: React.FC<WorkspaceFormProps> = ({
     setIsComparingContext(false);
     setValidationError(null);
     setUserEditedFields({});
+    setQuestionOffer(null);
 
     // Reset file input element so re-uploading works smoothly
     if (fileInputRef.current) {
@@ -137,7 +158,7 @@ export const WorkspaceForm: React.FC<WorkspaceFormProps> = ({
 
     try {
       const detectedMime = mimeType || (dataUrl.startsWith('data:image/jpeg') ? 'image/jpeg' : 'image/png');
-      const { understanding, observations } = await analyzeArtifactViaServer(
+      const { understanding, observations, decisionQuestion: offer } = await analyzeArtifactViaServer(
         dataUrl,
         fileName || 'artifact.png',
         detectedMime
@@ -155,6 +176,14 @@ export const WorkspaceForm: React.FC<WorkspaceFormProps> = ({
               .join(', ')}). It was treated as content to judge, not as a direction to follow.`
           : null
       );
+
+      /*
+       * CAP-04 behaviour 1. The proposal arrives with the reading, because it
+       * is read off the same statements. It is held, not applied: nothing is
+       * confirmed until the PM confirms it.
+       */
+      setQuestionOffer(offer);
+      if (offer.proposal) onQuestionProposed();
 
       // Successfully received visual-only understanding
       // Keep contextAlignment undefined - do NOT run context alignment during visual analysis
@@ -384,6 +413,7 @@ export const WorkspaceForm: React.FC<WorkspaceFormProps> = ({
     setCompareSuccessStatus(null);
     setValidationError(null);
     setUserEditedFields({});
+    setQuestionOffer(null);
 
     // Reset all review context to clean initial empty state
     onChangeContext({
@@ -433,6 +463,18 @@ export const WorkspaceForm: React.FC<WorkspaceFormProps> = ({
     }
     if (!context.primaryGoal?.trim()) {
       setValidationError('Please specify the primary product or business goal.');
+      return;
+    }
+
+    /*
+     * CAP-04: "Required — no verdict is possible without it." The panel is not
+     * asked to judge an unstated call.
+     */
+    if (!decisionQuestion?.trim()) {
+      setValidationError(
+        'Confirm the decision question above. The panel answers the call you are making, so it ' +
+          'cannot run without one.'
+      );
       return;
     }
     setValidationError(null);
@@ -878,6 +920,19 @@ export const WorkspaceForm: React.FC<WorkspaceFormProps> = ({
           </div>
         )}
 
+        {/*
+          CAP-04's trigger: after understanding, before any judgement. It sits
+          between the confirmed reading and the context questions for exactly
+          that reason.
+        */}
+        {hasArtifact && currentUnderstanding?.isConfirmed && (
+          <DecisionQuestionCard
+            offer={questionOffer}
+            confirmed={decisionQuestion}
+            onConfirm={onConfirmDecisionQuestion}
+          />
+        )}
+
         {/* STEP 3: Missing Critical Context */}
         {hasArtifact && (
           <div ref={contextSectionRef}>
@@ -1162,7 +1217,12 @@ export const WorkspaceForm: React.FC<WorkspaceFormProps> = ({
 
           <button
             type="submit"
-            disabled={isLoading || !hasArtifact || !currentUnderstanding?.isConfirmed}
+            disabled={
+              isLoading ||
+              !hasArtifact ||
+              !currentUnderstanding?.isConfirmed ||
+              !decisionQuestion?.trim()
+            }
             className="w-full sm:w-auto inline-flex items-center justify-center gap-2.5 px-6 py-3 rounded-lg text-sm font-semibold tracking-wide bg-stone-900 hover:bg-stone-800 text-white dark:bg-stone-100 dark:text-stone-900 dark:hover:bg-white shadow-sm transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
           >
             {isLoading ? (

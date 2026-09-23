@@ -115,6 +115,7 @@ describe('6 · FAILED and INSUFFICIENT are different outcomes', () => {
     __setGenAIClientForTests(client);
 
     const outcome = await runProductJuryDeliberation({
+      decisionQuestion: 'Should we ship the redesigned export flow before the Q4 freeze?',
       context: {
         name: 'T',
         whatBuilding: 'x',

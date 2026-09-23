@@ -102,7 +102,7 @@ function runUx(positions: unknown, spine: ClaimSpine) {
   const { budget, recorder } = shortRun();
   return {
     calls,
-    run: () => runUXResearcherAgent({ context, rawEvidence: '', spine, budget, recorder }),
+    run: () => runUXResearcherAgent({ context, decisionQuestion: 'Should we ship the redesigned export flow before the Q4 freeze?', rawEvidence: '', spine, budget, recorder }),
   };
 }
 
@@ -110,7 +110,7 @@ function runStrategy(positions: unknown, spine: ClaimSpine) {
   const { client } = stubProvider(() => ({ text: JSON.stringify(strategyResponse(positions)) }));
   __setGenAIClientForTests(client);
   const { budget, recorder } = shortRun();
-  return runProductStrategistAgent({ context, rawEvidence: '', spine, budget, recorder });
+  return runProductStrategistAgent({ context, decisionQuestion: 'Should we ship the redesigned export flow before the Q4 freeze?', rawEvidence: '', spine, budget, recorder });
 }
 
 describe('1 · the specialist position schema', () => {
@@ -467,7 +467,7 @@ describe('11 · a malformed specialist response fails honestly', () => {
     const { budget, recorder } = shortRun();
 
     await expect(
-      runUXResearcherAgent({ context, rawEvidence: '', spine, budget, recorder })
+      runUXResearcherAgent({ context, decisionQuestion: 'Should we ship the redesigned export flow before the Q4 freeze?', rawEvidence: '', spine, budget, recorder })
     ).rejects.toThrow();
   });
 });
@@ -519,7 +519,7 @@ describe('13 · the UX lens is grounded', () => {
 
   it('is given the statements with their ids in the prompt', () => {
     const spine = spineForRun();
-    const supplied = buildSuppliedContent(context, '', { spine });
+    const supplied = buildSuppliedContent(context, '', { spine, decisionQuestion: 'Should we ship the redesigned export flow before the Q4 freeze?' });
 
     for (const claim of spine.surfaced()) {
       expect(supplied.block).toContain(claim.id);
@@ -592,7 +592,7 @@ describe('16 · the untrusted boundary is unchanged', () => {
 
   it('still keeps every statement inside the delimited block', () => {
     const spine = buildSpineFromAnalystReading(reading(H_ARTIFACT_WITH_INSTRUCTIONS), RUN).spine;
-    const supplied = buildSuppliedContent(context, '', { spine });
+    const supplied = buildSuppliedContent(context, '', { spine, decisionQuestion: 'Should we ship the redesigned export flow before the Q4 freeze?' });
     const opened = supplied.block.indexOf(UNTRUSTED_MARKERS.OPEN);
     const closed = supplied.block.lastIndexOf(UNTRUSTED_MARKERS.CLOSE);
 
@@ -629,7 +629,7 @@ describe('17 · Stage 1 holds', () => {
     const { budget, recorder } = shortRun();
 
     await expect(
-      runUXResearcherAgent({ context, rawEvidence: '', spine, budget, recorder })
+      runUXResearcherAgent({ context, decisionQuestion: 'Should we ship the redesigned export flow before the Q4 freeze?', rawEvidence: '', spine, budget, recorder })
     ).rejects.toThrow();
   });
 
@@ -644,7 +644,7 @@ describe('17 · Stage 1 holds', () => {
     const { budget, recorder } = shortRun();
 
     await expect(
-      runUXResearcherAgent({ context, rawEvidence: '', spine, budget, recorder })
+      runUXResearcherAgent({ context, decisionQuestion: 'Should we ship the redesigned export flow before the Q4 freeze?', rawEvidence: '', spine, budget, recorder })
     ).rejects.toThrow();
   });
 });

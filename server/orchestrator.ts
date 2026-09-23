@@ -11,6 +11,9 @@ import { ClaimSpine } from './claims/spine';
 import { spineFromUnderstanding } from './claims/specialistInput';
 import { addPmContextClaims } from './claims/fromContext';
 import { measureOriginCoverage } from './claims/originCoverage';
+import type { SpecialistPosition } from '../src/types/claims';
+import type { Decision } from '../src/types/decision';
+import { decisionFromRun } from './decision/fromLegacy';
 
 /**
  * Stage 1 · The pipeline, rebuilt so that it can produce nothing.
@@ -47,21 +50,80 @@ import { measureOriginCoverage } from './claims/originCoverage';
  * `ClaimSpine.fromJSON`, which revalidates every claim and every reference, so
  * a reading that came back from the browser altered fails the run rather than
  * reaching a prompt.
+ *
+ * Stage 4 adds two things, and they are the same thing seen from both ends.
+ *
+ *  - The run carries the PM's confirmed decision question (CAP-04). It is
+ *    required, because CAP-04's trigger is "after understanding, before any
+ *    judgement. Required — no verdict is possible without it", and because a
+ *    Decision is identified by its question. It reaches every stage through
+ *    `buildSuppliedContent`, as PM-supplied content, never as an instruction.
+ *  - A successful run ends as a Decision. `decisionFromRun()` — the bridge
+ *    Stage 3 built and the only one — turns the spine, the positions, the
+ *    provenance and the outcome into Decision version 1 here, at the one
+ *    success exit. There is deliberately no second construction path and no
+ *    second pipeline: what this function returns IS the canonical Decision,
+ *    with the legacy `ProductReview` carried alongside it for the surfaces
+ *    that still read it.
+ *
+ * What a FAILED run does NOT do is become a Decision. A run that fails before
+ * a spine exists has no statements, no positions and no reading; a Version
+ * built from it would be a record of a deliberation that never happened. The
+ * failure exit below returns the failure and nothing else.
  */
 
 export interface DeliberationOptions {
   context: ProductContext;
+  /**
+   * CAP-04. The PM's confirmed wording, and required. It is NOT on
+   * `ProductContext`: the question belongs to the decision, not to the
+   * product, and `ProductContext` is read by two dozen modules with no
+   * business seeing it.
+   */
+  decisionQuestion: string;
   rawEvidence?: string;
   budget?: DecisionBudget;
   recorder?: RunRecorder;
+  isSample?: boolean;
+  clock?: () => string;
+}
+
+/**
+ * Stage 4 · What a successful run is.
+ *
+ * The Decision is the result. `review` is the pipeline's own output type,
+ * carried so the existing surfaces keep working during the transition; it is
+ * the same verdict that is already inside `decision`'s version 1, not a second
+ * one.
+ */
+export interface DeliberationResult {
+  decision: Decision;
+  review: ProductReview;
 }
 
 export async function runProductJuryDeliberation(
   options: DeliberationOptions
-): Promise<RunOutcome<ProductReview>> {
+): Promise<RunOutcome<DeliberationResult>> {
   const { context, rawEvidence } = options;
+  const decisionQuestion = (options.decisionQuestion ?? '').trim();
   const budget = options.budget ?? new DecisionBudget();
-  const recorder = options.recorder ?? new RunRecorder();
+
+  /*
+   * Stage 4 · The deliberation joins the run the reading already started.
+   *
+   * The statements were built by the analyst, under the analyst's recorder, and
+   * every claim id and every position id is content-addressed with that run id
+   * in it. A Decision whose provenance said one run and whose statements said
+   * another would be a record of two readings filed as one — which is exactly
+   * what `decisionFromRun()` refuses, and it is right to refuse it.
+   *
+   * So the deliberation adopts the reading's run id rather than minting a
+   * second one. One decision, one run id, from the artifact being read to the
+   * version being written. A run with no reading behind it (no artifact) mints
+   * its own, as before.
+   */
+  const recorder =
+    options.recorder ?? new RunRecorder(context?.artifactUnderstanding?.claimSpine?.runId);
 
   // Stages this build does not have. Declared rather than omitted, so TR-4's
   // "which stages ran and which did not" is answerable and honest.
@@ -75,6 +137,16 @@ export async function runProductJuryDeliberation(
   try {
     if (!context) {
       throw new ProductJuryError('INVALID_REQUEST', { detail: { field: 'context' } });
+    }
+
+    /*
+     * CAP-04: "Required — no verdict is possible without it." The run refuses
+     * rather than judging an unstated call, and it refuses here rather than
+     * failing later inside the conversion, so the PM is told what is missing
+     * before anything is spent.
+     */
+    if (!decisionQuestion) {
+      throw new ProductJuryError('INVALID_REQUEST', { detail: { field: 'decisionQuestion' } });
     }
 
     const artifactUnderstanding = context.artifactUnderstanding;
@@ -134,8 +206,24 @@ export async function runProductJuryDeliberation(
 
     // Phase 1 — the two lenses. Run in parallel; either failing fails the run.
     const [uxSettled, strategySettled] = await Promise.allSettled([
-      runUXResearcherAgent({ context, rawEvidence, artifactUnderstanding, spine, budget, recorder }),
-      runProductStrategistAgent({ context, rawEvidence, artifactUnderstanding, spine, budget, recorder }),
+      runUXResearcherAgent({
+        context,
+        decisionQuestion,
+        rawEvidence,
+        artifactUnderstanding,
+        spine,
+        budget,
+        recorder,
+      }),
+      runProductStrategistAgent({
+        context,
+        decisionQuestion,
+        rawEvidence,
+        artifactUnderstanding,
+        spine,
+        budget,
+        recorder,
+      }),
     ]);
 
     if (uxSettled.status === 'rejected' || strategySettled.status === 'rejected') {
@@ -159,6 +247,7 @@ export async function runProductJuryDeliberation(
     // Phase 2 — the audit. No audit, no verdict (CAP-06).
     const evidenceAudit = await runEvidenceAuditorAgent({
       context,
+      decisionQuestion,
       artifactUnderstanding,
       spine,
       uxReview,
@@ -171,6 +260,7 @@ export async function runProductJuryDeliberation(
     // Phase 3 — the chair.
     const review = await runJuryDecisionAgent({
       context,
+      decisionQuestion,
       artifactUnderstanding,
       spine,
       contextAlignment,
@@ -183,7 +273,30 @@ export async function runProductJuryDeliberation(
       runId: recorder.id,
     });
 
-    return verdict(review, recorder.snapshot());
+    /*
+     * Stage 4 · The one success exit, and the one place a Decision is built.
+     *
+     * The positions are the lenses' own, already validated against this spine
+     * and already recorded as dependants of the claims they cite (FR-9). They
+     * are not re-derived, re-matched or rebuilt here.
+     */
+    const specialistPositions: SpecialistPosition[] = [
+      ...(uxReview.positions ?? []),
+      ...(strategyReview.positions ?? []),
+    ];
+
+    const outcome = verdict(review, recorder.snapshot());
+    const decision = decisionFromRun({
+      decisionQuestion,
+      outcome,
+      spine,
+      specialistPositions,
+      origin: 'pipeline',
+      isSample: options.isSample,
+      clock: options.clock,
+    });
+
+    return verdict({ decision, review }, outcome.provenance);
   } catch (error) {
     // The single exit for every failure in this pipeline. There is deliberately
     // no branch here that could produce INSUFFICIENT: a refusal requires a

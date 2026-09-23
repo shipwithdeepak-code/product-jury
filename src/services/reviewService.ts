@@ -29,6 +29,11 @@ import {
 
 export interface ProductReviewRequest {
   context: ProductContext;
+  /**
+   * Stage 4 · CAP-04. The PM's confirmed wording. Sent as its own field, not
+   * folded into `context`: it identifies the decision, not the product.
+   */
+  decisionQuestion: string;
   rawEvidence?: string;
 }
 
@@ -111,7 +116,11 @@ export class ProductJuryReviewService implements IProductReviewService {
       response = await fetch('/api/jury/deliberate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ context: request.context, rawEvidence: request.rawEvidence }),
+        body: JSON.stringify({
+          context: request.context,
+          decisionQuestion: request.decisionQuestion,
+          rawEvidence: request.rawEvidence,
+        }),
       });
     } catch {
       return {

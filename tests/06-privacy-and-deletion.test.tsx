@@ -113,6 +113,9 @@ describe('11 · privacy disclosure', () => {
           onChangeEvidence={() => {}}
           onSubmit={() => {}}
           isLoading={false}
+          decisionQuestion={null}
+          onConfirmDecisionQuestion={() => {}}
+          onQuestionProposed={() => {}}
           onPreloadSample={() => {}}
           requestUploadConsent={requestUploadConsent}
         />
@@ -167,6 +170,9 @@ describe('11 · privacy disclosure', () => {
           onChangeEvidence={() => {}}
           onSubmit={() => {}}
           isLoading={false}
+          decisionQuestion={null}
+          onConfirmDecisionQuestion={() => {}}
+          onQuestionProposed={() => {}}
           onPreloadSample={() => {}}
           requestUploadConsent={(proceed) => proceed()}
         />

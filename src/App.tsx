@@ -14,9 +14,15 @@ import {
   ProductReview,
   RunResult,
 } from './types';
-import { sampleProductContext, sampleRawEvidence, sampleProductReview } from './data/sampleReview';
+import {
+  sampleProductContext,
+  sampleRawEvidence,
+  sampleProductReview,
+  sampleDecisionQuestion,
+} from './data/sampleReview';
 import { reviewService } from './services/reviewService';
 import * as telemetry from './services/telemetryClient';
+import type { EditDistanceBand } from './integrity/decisionQuestion';
 import {
   deleteLocalData,
   hasAcknowledgedPrivacy,
@@ -39,6 +45,13 @@ export default function App() {
   const [currentTab, setCurrentTab] = useState<'workspace' | 'results'>('workspace');
   const [context, setContext] = useState<ProductContext>(emptyContext);
   const [rawEvidence, setRawEvidence] = useState<string>('');
+
+  /**
+   * Stage 4 · CAP-04. The confirmed decision question, held beside the context
+   * rather than inside it. It identifies the decision; `ProductContext`
+   * describes the product, and two dozen modules read that.
+   */
+  const [decisionQuestion, setDecisionQuestion] = useState<string | null>(null);
 
   /**
    * Stage 1 · The result is the run outcome, not a review.
@@ -93,17 +106,36 @@ export default function App() {
     pendingUploadRef.current = null;
   };
 
+  /**
+   * CAP-04's primary action, and §56.1's measurement of it. The band is the
+   * only thing about the wording that is ever emitted: §55 has no field that
+   * could carry the sentence, and this does not add one.
+   */
+  /** §55: emitted when a proposal actually arrives, never when one is absent. */
+  const handleQuestionProposed = () => {
+    telemetry.emit('question_proposed', { decisionId });
+  };
+
+  const handleConfirmDecisionQuestion = (question: string, band: EditDistanceBand) => {
+    setDecisionQuestion(question);
+    telemetry.emit('question_confirmed', { decisionId, editDistanceBand: band });
+  };
+
   const handlePreloadSample = () => {
     // TR-8: the sample is labelled as a sample wherever it appears, and it is
     // the only thing in the product that carries isSample.
     setContext(sampleProductContext);
     setRawEvidence(sampleRawEvidence);
+    // TR-8 again: the sample carries the sample's own question, and it is
+    // labelled a sample everywhere it appears.
+    setDecisionQuestion(sampleDecisionQuestion);
     setRunResult({ kind: 'VERDICT', review: sampleProductReview });
   };
 
   const handleResetToBlank = () => {
     setContext(emptyContext);
     setRawEvidence('');
+    setDecisionQuestion(null);
     setRunResult(null);
     setProgressSteps([]);
     setDecisionId(telemetry.mintDecisionId());
@@ -120,6 +152,7 @@ export default function App() {
     void telemetry.flush();
     setContext(emptyContext);
     setRawEvidence('');
+    setDecisionQuestion(null);
     setRunResult(null);
     setReviewHistory([]);
     setProgressSteps([]);
@@ -136,7 +169,7 @@ export default function App() {
 
     const startedAt = Date.now();
     const result = await reviewService.runReview(
-      { context, rawEvidence },
+      { context, decisionQuestion: decisionQuestion ?? '', rawEvidence },
       (steps) => setProgressSteps(steps)
     );
 
@@ -200,6 +233,9 @@ export default function App() {
             isLoading={isAnalyzing}
             onPreloadSample={handlePreloadSample}
             onResetWorkspace={handleResetToBlank}
+            decisionQuestion={decisionQuestion}
+            onConfirmDecisionQuestion={handleConfirmDecisionQuestion}
+            onQuestionProposed={handleQuestionProposed}
             requestUploadConsent={requestUploadConsent}
           />
         ) : runResult?.kind === 'FAILED' ? (

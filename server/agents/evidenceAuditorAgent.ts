@@ -9,7 +9,7 @@ import {
 import { DecisionBudget } from '../integrity/budget';
 import { RunRecorder } from '../integrity/provenance';
 import { ProductJuryError } from '../integrity/errors';
-import { buildSuppliedContent } from './promptContext';
+import { DECISION_QUESTION_INSTRUCTION, buildSuppliedContent } from './promptContext';
 import type { ClaimSpine } from '../claims/spine';
 
 const evidenceAuditorSchema = {
@@ -103,6 +103,11 @@ export interface RunEvidenceAuditorInput {
   rawEvidence?: string;
   budget: DecisionBudget;
   recorder: RunRecorder;
+  /**
+   * Stage 4 · CAP-04 behaviour 7. The PM's confirmed decision question. This
+   * stage answers it rather than the artifact in general.
+   */
+  decisionQuestion: string;
 }
 
 /**
@@ -128,7 +133,10 @@ export async function runEvidenceAuditorAgent(
   const { context, artifactUnderstanding, uxReview, strategyReview, rawEvidence, budget, recorder } =
     input;
 
-  const supplied = buildSuppliedContent(context, rawEvidence, { spine: input.spine });
+  const supplied = buildSuppliedContent(context, rawEvidence, {
+    spine: input.spine,
+    decisionQuestion: input.decisionQuestion,
+  });
 
   const panelPositions = [
     uxReview
@@ -155,7 +163,16 @@ ${panelPositions}
 Produce a structured evidence audit adhering strictly to the JSON schema.`;
 
   const result = await invokeGeminiJson<EvidenceAuditResult>({
-    systemInstruction,
+    /*
+     * Stage 4 · CAP-04's brief, appended rather than interpolated into the
+     * literal above. Suite 12 forbids any interpolation inside the
+     * `systemInstruction` literal — SR-2's rule is that nothing *supplied*
+     * reaches instruction context, and the way that rule is enforced is by
+     * allowing no interpolation there at all. This is a module constant with
+     * no supplied value anywhere in it, and it is joined here so the literal
+     * stays inspectable.
+     */
+    systemInstruction: `${systemInstruction}\n\n${DECISION_QUESTION_INSTRUCTION}`,
     prompt: promptText,
     schema: evidenceAuditorSchema,
     temperature: 0.2,

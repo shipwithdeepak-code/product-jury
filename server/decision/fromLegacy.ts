@@ -1,6 +1,6 @@
 import type { ProductReview } from '../../src/types';
 import type { SpecialistPosition } from '../../src/types/claims';
-import type { Decision, VersionOutcome, VersionVerdict } from '../../src/types/decision';
+import type { Decision, VersionOrigin, VersionOutcome, VersionVerdict } from '../../src/types/decision';
 import type { RunProvenance } from '../../src/types';
 import type { RunOutcome } from '../integrity/outcome';
 import { ClaimSpine } from '../claims/spine';
@@ -73,6 +73,14 @@ export interface LegacyConversionInput {
   spine: ClaimSpine;
   /** Stage 2.5's positions, as the lenses produced them. */
   specialistPositions: SpecialistPosition[];
+  /**
+   * Where this version came from (§17). Stage 4 wires the pipeline's own
+   * success exit through this function, and a decision the pipeline just
+   * produced is not a legacy import — so the caller says which it is. The
+   * default is kept at `legacy_import` because that is what every caller
+   * before Stage 4 was.
+   */
+  origin?: VersionOrigin;
   /** TR-8. */
   isSample?: boolean;
   clock?: () => string;
@@ -141,7 +149,7 @@ export function decisionFromRun(input: LegacyConversionInput): Decision {
     runMeta: provenance,
     outcome: versionOutcome(input.outcome),
     verdict,
-    origin: 'legacy_import',
+    origin: input.origin ?? 'legacy_import',
     isSample: input.isSample ?? false,
     clock: input.clock,
     id: input.id,

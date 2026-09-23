@@ -2,6 +2,7 @@ import {
   ArtifactUnderstanding,
   ContextAlignment,
   ContextAnalysisResponse,
+  DecisionQuestionOffer,
   EmbeddedInstructionObservation,
 } from '../types';
 
@@ -57,6 +58,13 @@ export interface ArtifactReading {
   understanding: ArtifactUnderstanding;
   /** SR-8: instructions found in the input, recorded rather than obeyed. */
   observations: EmbeddedInstructionObservation[];
+  /**
+   * Stage 4 · CAP-04. The proposed decision question, or the honest absence of
+   * one. Carried through untouched: nothing here composes a question, and a
+   * server that returned neither shape is read as an absence with a reason
+   * rather than as a blank the workspace could mistake for a proposal.
+   */
+  decisionQuestion: DecisionQuestionOffer;
 }
 
 export async function analyzeArtifactViaServer(
@@ -112,9 +120,23 @@ export async function analyzeArtifactViaServer(
     );
   }
 
+  const offer = result.decisionQuestion as DecisionQuestionOffer | undefined;
+
   return {
     understanding: { ...understanding, detailedAnalysis: data, contextAlignment: undefined },
     observations: Array.isArray(result.observations) ? result.observations : [],
+    decisionQuestion:
+      offer && (offer.proposal || offer.unavailable)
+        ? offer
+        : {
+            proposal: null,
+            unavailable: {
+              code: 'EMPTY_RESPONSE',
+              userMessage:
+                'No decision question was proposed for this artifact. Write the question you are ' +
+                'deciding — the panel needs it before it can judge anything.',
+            },
+          },
   };
 }
 

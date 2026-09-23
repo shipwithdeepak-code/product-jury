@@ -393,7 +393,7 @@ describe('17 · specialist adapter compatibility', () => {
       primaryGoal: 'Raise day-14 activation',
     };
 
-    const supplied = buildSuppliedContent(context, undefined, { spine });
+    const supplied = buildSuppliedContent(context, undefined, { spine, decisionQuestion: 'Should we ship the redesigned export flow before the Q4 freeze?' });
 
     // FR-9 needs an addressable statement. The old shape — "Observed: a | b" —
     // gave a specialist nothing to cite.
@@ -503,7 +503,7 @@ describe('18 · supplied content stays separated from instructions', () => {
     const supplied = buildSuppliedContent(
       { name: 'Atlas', whatBuilding: 'x', targetUser: 'y', primaryGoal: 'z' },
       undefined,
-      { spine }
+      { spine, decisionQuestion: 'Should we ship the redesigned export flow before the Q4 freeze?' }
     );
 
     const block = supplied.block;
@@ -527,7 +527,7 @@ describe('18 · supplied content stays separated from instructions', () => {
         primaryGoal: 'Raise day-14 activation',
       },
       undefined,
-      { spine }
+      { spine, decisionQuestion: 'Should we ship the redesigned export flow before the Q4 freeze?' }
     );
 
     expect(supplied.observations.length).toBeGreaterThan(0);
@@ -567,7 +567,7 @@ describe('19 · Stage 1 failure states are unchanged', () => {
     });
     __setGenAIClientForTests(client);
 
-    const outcome = await runProductJuryDeliberation({ context, rawEvidence: '' });
+    const outcome = await runProductJuryDeliberation({ context, decisionQuestion: 'Should we ship the redesigned export flow before the Q4 freeze?', rawEvidence: '' });
 
     expect(outcome.kind).toBe('FAILED');
     expect(isInsufficient(outcome)).toBe(false);
@@ -584,6 +584,7 @@ describe('19 · Stage 1 failure states are unchanged', () => {
     __setGenAIClientForTests(client);
 
     const outcome = await runProductJuryDeliberation({
+      decisionQuestion: 'Should we ship the redesigned export flow before the Q4 freeze?',
       context: { ...context, artifactUnderstanding: understanding },
       rawEvidence: '',
     });
@@ -603,7 +604,7 @@ describe('19 · Stage 1 failure states are unchanged', () => {
     });
     __setGenAIClientForTests(client);
 
-    const outcome = await runProductJuryDeliberation({ context, rawEvidence: '' });
+    const outcome = await runProductJuryDeliberation({ context, decisionQuestion: 'Should we ship the redesigned export flow before the Q4 freeze?', rawEvidence: '' });
 
     expect(
       outcome.provenance.stages
@@ -626,6 +627,7 @@ describe('19 · Stage 1 failure states are unchanged', () => {
     __setGenAIClientForTests(client);
 
     const outcome = await runProductJuryDeliberation({
+      decisionQuestion: 'Should we ship the redesigned export flow before the Q4 freeze?',
       context: {
         ...context,
         artifactUnderstanding: {

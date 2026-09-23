@@ -3,7 +3,7 @@ import { DecisionBudget } from '../integrity/budget';
 import { RunRecorder } from '../integrity/provenance';
 import { ProductJuryError } from '../integrity/errors';
 import { checkLanguagePolicy } from '../integrity/languagePolicy';
-import { buildSuppliedContent } from './promptContext';
+import { DECISION_QUESTION_INSTRUCTION, buildSuppliedContent } from './promptContext';
 import type { ClaimSpine } from '../claims/spine';
 import {
   ProductReview,
@@ -189,6 +189,17 @@ VOICE, BINDING:
     is...". Never write "we recommend", "you should", "the AI recommends" or "final verdict".
   - You never instruct anyone. The product manager decides.`;
 
+/**
+ * Stage 4 · CAP-04 behaviour 8, which applies to the chair and not to the
+ * lenses: "Requires the verdict to answer it visibly, in its own words."
+ *
+ * It is a line of the chair's brief, held here rather than inside the literal
+ * above for the reason given at the call site.
+ */
+const ANSWER_THE_QUESTION = `CAP-04 behaviour 8, and it applies to you rather than to the lenses: the executive summary must
+visibly answer the decision question, in its own words, in its first sentence. A summary that
+describes the artifact without answering the question is not a verdict on anything.`;
+
 export interface RunJuryDecisionInput {
   context: ProductContext;
   artifactUnderstanding?: ArtifactUnderstanding;
@@ -202,6 +213,11 @@ export interface RunJuryDecisionInput {
   budget: DecisionBudget;
   recorder: RunRecorder;
   runId: string;
+  /**
+   * Stage 4 · CAP-04 behaviour 7. The PM's confirmed decision question. This
+   * stage answers it rather than the artifact in general.
+   */
+  decisionQuestion: string;
 }
 
 /**
@@ -239,7 +255,10 @@ export async function runJuryDecisionAgent(input: RunJuryDecisionInput): Promise
     runId,
   } = input;
 
-  const supplied = buildSuppliedContent(context, rawEvidence, { spine: input.spine });
+  const supplied = buildSuppliedContent(context, rawEvidence, {
+    spine: input.spine,
+    decisionQuestion: input.decisionQuestion,
+  });
 
   const promptText = `Synthesise the panel's position for this decision.
 
@@ -271,7 +290,16 @@ EVIDENCE AUDIT (produced by this run):
 Synthesise the position adhering strictly to the JSON schema.`;
 
   const rawResult = await invokeGeminiJson<Record<string, unknown>>({
-    systemInstruction,
+    /*
+     * Stage 4 · CAP-04's brief, appended rather than interpolated into the
+     * literal above. Suite 12 forbids any interpolation inside the
+     * `systemInstruction` literal — SR-2's rule is that nothing *supplied*
+     * reaches instruction context, and the way that rule is enforced is by
+     * allowing no interpolation there at all. This is a module constant with
+     * no supplied value anywhere in it, and it is joined here so the literal
+     * stays inspectable.
+     */
+    systemInstruction: `${systemInstruction}\n\n${DECISION_QUESTION_INSTRUCTION}\n\n${ANSWER_THE_QUESTION}`,
     prompt: promptText,
     schema: juryDecisionSchema,
     temperature: 0.2,

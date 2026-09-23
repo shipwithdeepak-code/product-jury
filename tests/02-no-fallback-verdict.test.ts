@@ -78,7 +78,7 @@ describe('5 · no fallback verdict', () => {
       additionalContext: '',
     };
 
-    const outcome = await runProductJuryDeliberation({ context, rawEvidence: '' });
+    const outcome = await runProductJuryDeliberation({ context, decisionQuestion: 'Should we ship the redesigned export flow before the Q4 freeze?', rawEvidence: '' });
 
     expect(outcome.kind).toBe('FAILED');
     expect(outcome).not.toHaveProperty('data');
@@ -94,6 +94,7 @@ describe('5 · no fallback verdict', () => {
     __setGenAIClientForTests(client);
 
     const outcome = await runProductJuryDeliberation({
+      decisionQuestion: 'Should we ship the redesigned export flow before the Q4 freeze?',
       context: {
         name: 'T',
         whatBuilding: 'x',

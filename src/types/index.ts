@@ -433,3 +433,44 @@ export type {
   VersionTrigger,
   VersionVerdict,
 } from './decision';
+
+/**
+ * Stage 4 · CAP-04. The proposed decision question.
+ *
+ * PRD v1.1.1 CAP-04 (§21), FR-4, FR-4a, FR-4b.
+ *
+ * This is a *proposal*, not a domain object. The decision question itself is
+ * the identity of a Decision and lives on `Decision` and `DecisionVersion`
+ * above; what travels from the analyst step to the workspace is one sentence
+ * the PM has not yet confirmed, plus what the product noticed about it.
+ *
+ * It is deliberately NOT on `ProductContext`: the question is a property of
+ * the decision being made, not of the product being decided about, and
+ * `ProductContext` is read by twenty-odd other modules that have no business
+ * seeing it.
+ */
+export interface DecisionQuestionProposal {
+  /** The sentence the model proposed, verbatim. Never composed by the product. */
+  question: string;
+  /** The claim ids the model named as what it read the call off. */
+  groundedIn: string[];
+  /** FR-4a, measured locally by `src/integrity/decisionQuestion.ts`. */
+  isDecisionShaped: boolean;
+  /** Why not, in the PM's language, when it is not. */
+  weakness: string | null;
+}
+
+/**
+ * What `/api/context/analyze` returns about the question, which is either a
+ * proposal or the honest absence of one.
+ *
+ * CAP-04's failure state: "If a proposal cannot be generated, the PM writes it
+ * unaided with an example shown. The requirement is never waived." So there is
+ * no third shape here — nothing is generated locally to stand in for the
+ * model, and `unavailable` carries the real reason rather than a blank.
+ */
+export interface DecisionQuestionOffer {
+  proposal: DecisionQuestionProposal | null;
+  /** Present exactly when `proposal` is null. SR-4: a code and a sentence. */
+  unavailable: { code: string; userMessage: string } | null;
+}

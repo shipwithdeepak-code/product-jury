@@ -21,6 +21,15 @@
 export type PipelineStage =
   | 'analyst'
   | 'context_alignment'
+  /*
+   * Stage 4 · CAP-04. The stage that proposes the decision question.
+   *
+   * It is a real provider call, so TR-4 requires it to be recorded like every
+   * other one. It is deliberately NOT in VERDICT_BEARING_STAGES below: it
+   * proposes a sentence the PM then confirms, edits or replaces, and what
+   * reaches judgement is the PM's confirmed wording, not the model's.
+   */
+  | 'decision_question'
   | 'gate'
   | 'specialist_ux'
   | 'specialist_strategy'
