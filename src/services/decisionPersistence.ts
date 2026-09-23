@@ -94,12 +94,56 @@ export async function persistDecision(decision: Decision): Promise<PersistResult
   }
 }
 
-/** CAP-12's question-first list. Empty when storage is unavailable. */
-export async function listStoredDecisions(): Promise<DecisionListing[]> {
+/**
+ * Stage 7 · What the Decisions surface asks for, and what it can be told.
+ *
+ * Four states, named, because §15 asks for four and because a surface that
+ * cannot tell "not there" from "would not open" ends up showing an empty
+ * decision for both.
+ */
+export type StoredDecisions =
+  | { status: 'loaded'; listings: DecisionListing[] }
+  | { status: 'error'; userMessage: string };
+
+export type StoredDecision =
+  | { status: 'loaded'; decision: Decision }
+  | { status: 'not_found' }
+  | { status: 'error'; userMessage: string };
+
+function storageMessage(error: unknown): string {
+  if (error instanceof DecisionStorageError) {
+    console.error(`[storage] ${error.code}`, error.cause ?? error);
+    return error.userMessage;
+  }
+  console.error('[storage] the decision store could not be read', error);
+  return (
+    'The decisions kept on this device could not be read. Nothing has been changed or removed.'
+  );
+}
+
+/** CAP-12's question-first list, from the store and from nowhere else. */
+export async function listStoredDecisions(): Promise<StoredDecisions> {
   try {
-    return await useStore().listDecisions();
+    return { status: 'loaded', listings: await useStore().listDecisions() };
   } catch (error) {
-    console.error('[storage] the decision list could not be read', error);
-    return [];
+    return { status: 'error', userMessage: storageMessage(error) };
+  }
+}
+
+/**
+ * One stored decision.
+ *
+ * `not_found` and `error` are different answers and stay different: a decision
+ * that was deleted is not a decision that would not open, and the second is
+ * not allowed to read as the first — a corrupt record must not look like an
+ * absent one, or the PM would conclude they had lost something they still
+ * have.
+ */
+export async function openStoredDecision(id: string): Promise<StoredDecision> {
+  try {
+    const decision = await useStore().getDecision(id);
+    return decision ? { status: 'loaded', decision } : { status: 'not_found' };
+  } catch (error) {
+    return { status: 'error', userMessage: storageMessage(error) };
   }
 }

@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { Header } from './components/Header';
 import { WorkspaceForm } from './components/WorkspaceForm';
 import { ResultsView } from './components/ResultsView';
@@ -8,6 +8,8 @@ import { HistoryDrawer } from './components/HistoryDrawer';
 import { StandingLimitations } from './components/StandingLimitations';
 import { PrivacyDisclosure } from './components/PrivacyDisclosure';
 import { FailureView, InsufficientView } from './components/RunOutcomeView';
+import { DecisionsList } from './components/DecisionsList';
+import { DecisionDetail } from './components/DecisionDetail';
 import {
   AnalysisProgressStep,
   ProductContext,
@@ -21,7 +23,14 @@ import {
   sampleDecisionQuestion,
 } from './data/sampleReview';
 import { reviewService } from './services/reviewService';
-import { persistDecision } from './services/decisionPersistence';
+import {
+  listStoredDecisions,
+  openStoredDecision,
+  persistDecision,
+  type StoredDecision,
+  type StoredDecisions,
+} from './services/decisionPersistence';
+import { navigate, useRoute } from './routing/route';
 import * as telemetry from './services/telemetryClient';
 import type { EditDistanceBand } from './integrity/decisionQuestion';
 import {
@@ -70,6 +79,48 @@ export default function App() {
    * Null is the ordinary case, including when there was nothing to store.
    */
   const [storageNotice, setStorageNotice] = useState<string | null>(null);
+  /*
+   * Stage 7 · §10. The path to the decision this run was kept as.
+   *
+   * It is the id the pipeline already minted and Stage 6 already stored — no
+   * second decision, no second id, and nothing re-derived from the review.
+   */
+  const [keptDecisionId, setKeptDecisionId] = useState<string | null>(null);
+
+  /*
+   * Stage 7 · The decisions surface.
+   *
+   * Both pieces of state hold what the store answered, including when the
+   * answer was "not there" or "would not open". Neither is a cache: the route
+   * is what decides when they are read, and nothing writes to them but the
+   * effect below.
+   */
+  const route = useRoute();
+  const [decisionsState, setDecisionsState] = useState<StoredDecisions | { status: 'loading' }>({
+    status: 'loading',
+  });
+  const [decisionState, setDecisionState] = useState<StoredDecision | { status: 'loading' }>({
+    status: 'loading',
+  });
+
+  useEffect(() => {
+    let current = true;
+    if (route.name === 'decisions') {
+      setDecisionsState({ status: 'loading' });
+      void listStoredDecisions().then((next) => {
+        if (current) setDecisionsState(next);
+      });
+    } else if (route.name === 'decision') {
+      setDecisionState({ status: 'loading' });
+      void openStoredDecision(route.id).then((next) => {
+        if (current) setDecisionState(next);
+      });
+    }
+    // The route changing mid-read must not let a stale answer land.
+    return () => {
+      current = false;
+    };
+  }, [route.name, route.name === 'decision' ? route.id : '']);
 
   const [decisionId, setDecisionId] = useState<string>(() => telemetry.mintDecisionId());
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -197,9 +248,14 @@ export default function App() {
      * the outcome — `persistDecision` returns, it does not throw.
      */
     setStorageNotice(null);
+    setKeptDecisionId(null);
     if (result.kind !== 'FAILED' && result.decision) {
       const kept = await persistDecision(result.decision);
       if (!kept.stored) setStorageNotice(kept.userMessage ?? null);
+      // §10: the decision the PM can now open is the one just stored, by the
+      // id it was stored under. A refusal is stored too, and is just as
+      // openable — CAP-18's outcome is a decision, not a failed attempt.
+      else setKeptDecisionId(result.decision.id);
     }
 
     // §55. Three outcomes, three events. A failure is not a refusal and does
@@ -240,21 +296,63 @@ export default function App() {
       <Header
         currentTab={currentTab}
         hasResults={runResult !== null}
-        onNavigate={(tab) => setCurrentTab(tab)}
+        onNavigate={(tab) => {
+          navigate({ name: 'run' });
+          setCurrentTab(tab);
+        }}
         onOpenHistory={() => setIsHistoryDrawerOpen(true)}
         onLoadSample={() => {
+          navigate({ name: 'run' });
           handlePreloadSample();
           setCurrentTab('workspace');
         }}
-        onNewReview={handleResetToBlank}
+        onNewReview={() => {
+          navigate({ name: 'run' });
+          handleResetToBlank();
+        }}
+        onOpenDecisions={() => navigate({ name: 'decisions' })}
+        decisionsActive={route.name !== 'run'}
       />
 
       <main className="flex-1 pb-4">
+        {/*
+          Stage 7 · Two addresses, and the run surface everything else lives
+          on. The decisions surface renders the canonical Decision the store
+          answered with; it is never assembled from the run that is in memory.
+        */}
+        {route.name === 'decisions' ? (
+          <DecisionsList
+            state={decisionsState}
+            onOpen={(id) => {
+              telemetry.emit('decision_opened', { decisionId });
+              navigate({ name: 'decision', id });
+            }}
+            onStartNew={() => {
+              navigate({ name: 'run' });
+              handleResetToBlank();
+            }}
+          />
+        ) : route.name === 'decision' ? (
+          <DecisionDetail state={decisionState} onBack={() => navigate({ name: 'decisions' })} />
+        ) : (
+          <>
         {/*
           CAP-12's failure state, said at the time and said once. It is not an
           alert and not a modal: the deliberation succeeded, and only the
           keeping of it did not.
         */}
+        {keptDecisionId && currentTab === 'results' && (
+          <p className="max-w-3xl mx-auto px-4 sm:px-6 pt-4 text-xs text-stone-600 dark:text-stone-400 leading-relaxed">
+            Kept on this device.{' '}
+            <button
+              type="button"
+              onClick={() => navigate({ name: 'decision', id: keptDecisionId })}
+              className="underline underline-offset-4 hover:text-stone-900 dark:hover:text-stone-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-stone-500 rounded-sm"
+            >
+              Open this decision
+            </button>
+          </p>
+        )}
         {storageNotice && currentTab === 'results' && (
           <p
             role="status"
@@ -304,6 +402,8 @@ export default function App() {
               }}
             />
           )
+        )}
+          </>
         )}
       </main>
 

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Scale, PlusCircle, History, Sparkles, FileText } from 'lucide-react';
+import { Scale, PlusCircle, History, Sparkles, FileText, Layers } from 'lucide-react';
 
 interface HeaderProps {
   currentTab: 'workspace' | 'results';
@@ -8,6 +8,15 @@ interface HeaderProps {
   onOpenHistory: () => void;
   onLoadSample: () => void;
   onNewReview?: () => void;
+  /**
+   * Stage 7 · CAP-12. The way to the decisions kept on this device.
+   *
+   * It sits with the right-hand controls rather than in the tab nav above,
+   * because that nav is `hidden md:flex` and a phone would have had no route
+   * to the list at all (§14).
+   */
+  onOpenDecisions?: () => void;
+  decisionsActive?: boolean;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -17,6 +26,8 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenHistory,
   onLoadSample,
   onNewReview,
+  onOpenDecisions,
+  decisionsActive,
 }) => {
   return (
     <header className="sticky top-0 z-40 bg-stone-900 text-stone-100 border-b border-stone-800">
@@ -94,6 +105,21 @@ export const Header: React.FC<HeaderProps> = ({
               <Sparkles className="w-3.5 h-3.5 text-amber-400" />
               <span>Load Sample Case</span>
             </button>
+
+            {onOpenDecisions && (
+              <button
+                onClick={onOpenDecisions}
+                aria-current={decisionsActive ? 'page' : undefined}
+                className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-md border transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 ${
+                  decisionsActive
+                    ? 'bg-stone-800 text-white border-stone-600'
+                    : 'bg-stone-800/60 hover:bg-stone-800 text-stone-300 border-stone-700/50 hover:border-stone-600'
+                }`}
+              >
+                <Layers className="w-3.5 h-3.5 text-stone-400" />
+                <span>Decisions</span>
+              </button>
+            )}
 
             {/* History Placeholder */}
             <button
