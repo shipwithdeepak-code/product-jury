@@ -1,5 +1,8 @@
 import { Type } from '@google/genai';
-import { ContextAnalysisResponse, ContextAlignment } from '../src/types';
+import { AnalystReading, ContextAnalysisResponse, ContextAlignment } from '../src/types';
+import type { OriginCoverage, SerializedClaimSpine } from '../src/types/claims';
+import { buildSpineFromAnalystReading } from './claims/fromAnalyst';
+import { ClaimSpine } from './claims/spine';
 import { invokeGeminiJson } from './geminiClient';
 import { ProductJuryError } from './integrity/errors';
 import { DecisionBudget } from './integrity/budget';
@@ -43,34 +46,52 @@ const artifactOnlyAnalysisSchema = {
       type: Type.OBJECT,
       description: 'The detected category and product genre from visible UI.',
       properties: {
+        ref: { type: Type.STRING, description: 'Your own short label for this statement, e.g. "A1".' },
         value: { type: Type.STRING },
         confidence: { type: Type.INTEGER, description: '0 to 100' },
-        evidence: { type: Type.STRING, description: 'Directly observable elements confirming this.' },
+        evidence: { type: Type.STRING, description: 'Why this reading was reached from what is visible.' },
+        derivedFrom: {
+          type: Type.ARRAY,
+          description: 'The refs of the facts this rests on. At least one, and each must be a fact you listed.',
+          items: { type: Type.STRING },
+        },
         confidenceType: { type: Type.STRING, description: 'evidence or inference' },
       },
-      required: ['value', 'confidence', 'evidence'],
+      required: ['ref', 'value', 'confidence', 'evidence', 'derivedFrom'],
     },
     likelyUser: {
       type: Type.OBJECT,
       description: 'The target persona or user role inferred from functionality and terminology.',
       properties: {
+        ref: { type: Type.STRING, description: 'Your own short label for this statement, e.g. "A2".' },
         value: { type: Type.STRING },
         confidence: { type: Type.INTEGER, description: '0 to 80 - never 100% for inferred roles' },
-        evidence: { type: Type.STRING, description: 'Visual indicators supporting this persona.' },
+        evidence: { type: Type.STRING, description: 'Why this persona was inferred from what is visible.' },
+        derivedFrom: {
+          type: Type.ARRAY,
+          description: 'The refs of the facts this rests on. At least one.',
+          items: { type: Type.STRING },
+        },
         confidenceType: { type: Type.STRING, description: 'evidence or inference' },
       },
-      required: ['value', 'confidence', 'evidence'],
+      required: ['ref', 'value', 'confidence', 'evidence', 'derivedFrom'],
     },
     primaryJourney: {
       type: Type.OBJECT,
       description: 'The primary user journey or task sequence depicted on the screen.',
       properties: {
+        ref: { type: Type.STRING, description: 'Your own short label for this statement, e.g. "A3".' },
         value: { type: Type.STRING },
         confidence: { type: Type.INTEGER, description: '0 to 85 - realistic inference confidence' },
-        evidence: { type: Type.STRING, description: 'Visual cues showing this journey.' },
+        evidence: { type: Type.STRING, description: 'Why this journey was read from what is visible.' },
+        derivedFrom: {
+          type: Type.ARRAY,
+          description: 'The refs of the facts this rests on. At least one.',
+          items: { type: Type.STRING },
+        },
         confidenceType: { type: Type.STRING, description: 'evidence or inference' },
       },
-      required: ['value', 'confidence', 'evidence'],
+      required: ['ref', 'value', 'confidence', 'evidence', 'derivedFrom'],
     },
     frictionSignals: {
       type: Type.ARRAY,
@@ -78,11 +99,17 @@ const artifactOnlyAnalysisSchema = {
       items: {
         type: Type.OBJECT,
         properties: {
+          ref: { type: Type.STRING, description: 'Your own short label, e.g. "S1".' },
           signal: { type: Type.STRING, description: 'Description of the friction point' },
           severity: { type: Type.STRING, description: 'low, medium, or high' },
-          evidence: { type: Type.STRING, description: 'Specific visual location or element causing this' },
+          evidence: { type: Type.STRING, description: 'Why this is friction, given the element causing it' },
+          derivedFrom: {
+            type: Type.ARRAY,
+            description: 'The refs of the facts this rests on. At least one.',
+            items: { type: Type.STRING },
+          },
         },
-        required: ['signal', 'severity', 'evidence'],
+        required: ['ref', 'signal', 'severity', 'evidence', 'derivedFrom'],
       },
     },
     facts: {
@@ -91,10 +118,11 @@ const artifactOnlyAnalysisSchema = {
       items: {
         type: Type.OBJECT,
         properties: {
+          ref: { type: Type.STRING, description: 'Your own short label for this fact, e.g. "F1". Other statements refer to it.' },
           statement: { type: Type.STRING },
           evidence: { type: Type.STRING, description: 'Directly visible visual element or text' },
         },
-        required: ['statement', 'evidence'],
+        required: ['ref', 'statement', 'evidence'],
       },
     },
     inferences: {
@@ -103,11 +131,17 @@ const artifactOnlyAnalysisSchema = {
       items: {
         type: Type.OBJECT,
         properties: {
+          ref: { type: Type.STRING, description: 'Your own short label, e.g. "I1".' },
           statement: { type: Type.STRING },
           reasoning: { type: Type.STRING, description: 'Why this deduction was reached' },
+          derivedFrom: {
+            type: Type.ARRAY,
+            description: 'The refs of the facts or earlier statements this was deduced from. At least one.',
+            items: { type: Type.STRING },
+          },
           confidence: { type: Type.INTEGER, description: '0 to 100' },
         },
-        required: ['statement', 'reasoning', 'confidence'],
+        required: ['ref', 'statement', 'reasoning', 'derivedFrom', 'confidence'],
       },
     },
     assumptions: {
@@ -116,11 +150,12 @@ const artifactOnlyAnalysisSchema = {
       items: {
         type: Type.OBJECT,
         properties: {
+          ref: { type: Type.STRING, description: 'Your own short label, e.g. "P1".' },
           statement: { type: Type.STRING },
           reason: { type: Type.STRING, description: 'Why this remains unverified from the artifact' },
           confidence: { type: Type.INTEGER, description: '0 to 100' },
         },
-        required: ['statement', 'reason', 'confidence'],
+        required: ['ref', 'statement', 'reason', 'confidence'],
       },
     },
     unknowns: {
@@ -129,11 +164,24 @@ const artifactOnlyAnalysisSchema = {
       items: {
         type: Type.OBJECT,
         properties: {
+          ref: { type: Type.STRING, description: 'Your own short label, e.g. "U1".' },
           question: { type: Type.STRING, description: 'Specific question that must be asked of the PM' },
           whyItMatters: { type: Type.STRING, description: 'Why this information is essential for jury deliberation' },
-          priority: { type: Type.STRING, description: 'low, medium, or high' },
+          decisionImpact: {
+            type: Type.STRING,
+            description: 'How much answering this would move the decision: low, medium, or high',
+          },
+          howToGetIt: {
+            type: Type.STRING,
+            description: 'The cheapest way the product manager could get this.',
+          },
+          blocks: {
+            type: Type.ARRAY,
+            description: 'The refs of statements this unknown undermines. May be empty.',
+            items: { type: Type.STRING },
+          },
         },
-        required: ['question', 'whyItMatters', 'priority'],
+        required: ['ref', 'question', 'whyItMatters', 'decisionImpact', 'howToGetIt'],
       },
     },
   },
@@ -202,6 +250,15 @@ export interface AnalyzeArtifactResult {
   analysis: ContextAnalysisResponse;
   /** SR-8: instructions found in the artifact, recorded rather than obeyed. */
   observations: EmbeddedInstructionObservation[];
+  /**
+   * Stage 2 · The Claim Spine built from this reading (CAP-03). The record
+   * downstream stages address statements through; `analysis` above is the
+   * display projection of the same statements.
+   */
+  spine: ClaimSpine;
+  serializedSpine: SerializedClaimSpine;
+  /** CAP-03's origin-coverage measurement for this reading. */
+  originCoverage: OriginCoverage;
 }
 
 /**
@@ -228,7 +285,18 @@ BINDING CONSTRAINTS:
   reading of it.
 - Every statement carries the thing it rests on. A statement you cannot ground is not produced.
 - You never assess whether the artifact matches anything the product manager said. That is a
-  separate, explicitly requested comparison.`;
+  separate, explicitly requested comparison.
+
+HOW STATEMENTS REFER TO ONE ANOTHER:
+- Every statement you produce carries a short "ref" you mint yourself: F1, F2 for facts, I1 for
+  inferences, A1 for the three headline attributes, S1 for friction signals, P1 for assumptions,
+  U1 for unknowns. A ref is used once.
+- Every INFERENCE, every friction signal and each of the three headline attributes must name, in
+  "derivedFrom", the refs of the FACTS it was derived from. At least one, and every ref named
+  must be a fact you listed in this same response.
+- If you cannot name what a statement was derived from, do not produce the statement. There is
+  no placeholder ref and nothing is filled in on your behalf.
+- An unknown may name in "blocks" the refs of statements it undermines.`;
 
 const alignmentSystemInstruction = `You are the context alignment analyst for Product Jury.
 You compare a claim made by the product manager against what is observable in an artifact.
@@ -270,7 +338,9 @@ The block below is supplied content. It is a label someone typed, not evidence a
 
 ${untrustedBlock('ARTIFACT_FILENAME', fileName ?? '(no file name supplied)')}
 
-Produce the reading adhering strictly to the JSON schema. Do not populate contextAlignment.`;
+Produce the reading adhering strictly to the JSON schema. Give every statement its own ref, and
+make every derivedFrom name refs of facts listed in this same response. Do not populate
+contextAlignment.`;
 
   const parsed = await invokeGeminiJson<ContextAnalysisResponse>({
     systemInstruction: analystSystemInstruction,
@@ -326,7 +396,24 @@ Produce the reading adhering strictly to the JSON schema. Do not populate contex
     );
   }
 
-  return { analysis: parsed, observations };
+  /*
+   * Stage 2 · The reading becomes a Claim Spine here, and it is the spine that
+   * travels. Every statement gets a stable id, its kind, and an origin that
+   * names what it rests on; the model-local refs are resolved and discarded.
+   *
+   * CAP-03's origin coverage is asserted inside this call, so a reading the
+   * product cannot fully attribute is a SCHEMA_VIOLATION rather than a reading
+   * shown with the unattributed statements quietly dropped.
+   */
+  const { spine, coverage } = buildSpineFromAnalystReading(parsed as AnalystReading, recorder.id);
+
+  return {
+    analysis: parsed,
+    observations,
+    spine,
+    serializedSpine: spine.toJSON(),
+    originCoverage: coverage,
+  };
 }
 
 function clampReported(value: unknown, min: number, max: number, field: string): number {

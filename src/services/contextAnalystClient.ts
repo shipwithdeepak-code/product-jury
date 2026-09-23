@@ -93,26 +93,27 @@ export async function analyzeArtifactViaServer(
 
   const data: ContextAnalysisResponse = result.data;
 
-  const understanding: ArtifactUnderstanding = {
-    productType: data.productType.value,
-    likelyUser: data.likelyUser?.value ?? '',
-    detectedJourney: data.primaryJourney?.value ?? '',
-    frictionSignals: (data.frictionSignals || []).map((fs) => fs.signal),
-    facts: (data.facts || []).map((f) => f.statement),
-    inferences: (data.inferences || []).map((inf) => inf.statement),
-    assumptions: (data.assumptions || []).map((a) => a.statement),
-    unknowns: (data.unknowns || []).map((u) => u.question),
-    isConfirmed: false,
-    isAnalyzedByGemini: true,
-    // An artifact-only reading never carries an alignment (§51, fail closed).
-    contextAlignment: undefined,
-    // CAP-03: the origins survive here. The arrays above are a display
-    // convenience, not the record.
-    detailedAnalysis: data,
-  };
+  /*
+   * Stage 2 · The understanding is the server's projection of the Claim Spine.
+   *
+   * What used to be here was a second flattening — `facts.map(f => f.statement)`
+   * and three more like it — which is where every statement's origin was lost
+   * on the way into the interface. There is now one projection, it is built
+   * from the spine on the server, and the spine travels inside it so nothing
+   * downstream has to work from the flattened view.
+   */
+  const understanding = result.understanding as ArtifactUnderstanding | undefined;
+  if (!understanding || !understanding.claimSpine) {
+    throw new AnalysisFailure(
+      'The server returned a reading with no claim spine, so its statements have no origins. ' +
+        'Nothing is shown in its place.',
+      'SCHEMA_VIOLATION',
+      true
+    );
+  }
 
   return {
-    understanding,
+    understanding: { ...understanding, detailedAnalysis: data, contextAlignment: undefined },
     observations: Array.isArray(result.observations) ? result.observations : [],
   };
 }

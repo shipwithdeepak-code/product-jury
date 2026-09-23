@@ -4,6 +4,7 @@ import { RunRecorder } from '../integrity/provenance';
 import { ProductJuryError } from '../integrity/errors';
 import { checkLanguagePolicy } from '../integrity/languagePolicy';
 import { buildSuppliedContent } from './promptContext';
+import type { ClaimSpine } from '../claims/spine';
 import {
   ProductReview,
   ProductContext,
@@ -191,6 +192,8 @@ VOICE, BINDING:
 export interface RunJuryDecisionInput {
   context: ProductContext;
   artifactUnderstanding?: ArtifactUnderstanding;
+  /** Stage 2 · The run's Claim Spine, rebuilt once by the orchestrator. */
+  spine?: ClaimSpine | null;
   contextAlignment?: ContextAlignment;
   uxReview: UXResearchResult;
   strategyReview: ProductStrategyResult;
@@ -236,7 +239,9 @@ export async function runJuryDecisionAgent(input: RunJuryDecisionInput): Promise
     runId,
   } = input;
 
-  const supplied = buildSuppliedContent(context, rawEvidence, artifactUnderstanding);
+  const supplied = buildSuppliedContent(context, rawEvidence, artifactUnderstanding, {
+    spine: input.spine,
+  });
 
   const promptText = `Synthesise the panel's position for this decision.
 

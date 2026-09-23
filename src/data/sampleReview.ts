@@ -30,18 +30,24 @@ export const sampleArtifactUnderstanding: ArtifactUnderstanding = {
   isConfirmed: false,
   detailedAnalysis: {
     productType: {
+      ref: 'A1',
+      derivedFrom: ['F1'],
       value: 'B2B SaaS / Interactive Workflow Canvas & Onboarding Automation',
       confidence: 92,
       evidence: 'Observable visual canvas containing node trees, trigger cards, and pipeline headers.',
       confidenceType: 'evidence',
     },
     likelyUser: {
+      ref: 'A2',
+      derivedFrom: ['F1', 'F2'],
       value: 'Mid-market RevOps Managers, Growth Product Managers, and Lifecycle Marketers',
       confidence: 72,
       evidence: 'Deduced from workflow automation nodes, webhook configurations, and campaign triggers.',
       confidenceType: 'inference',
     },
     primaryJourney: {
+      ref: 'A3',
+      derivedFrom: ['F1'],
       value: 'Multi-step onboarding sequence setup & first-mile webhook configuration',
       confidence: 78,
       evidence: 'Step-progress indicator showing journey sequence from source trigger to deploy.',
@@ -49,11 +55,15 @@ export const sampleArtifactUnderstanding: ArtifactUnderstanding = {
     },
     frictionSignals: [
       {
+        ref: 'S1',
+        derivedFrom: ['F1'],
         signal: 'Competing visual prominence between primary "Deploy Journey" action and auxiliary tools',
         severity: 'high',
         evidence: 'Primary CTA shares identical vertical line with four utility tool icons.',
       },
       {
+        ref: 'S2',
+        derivedFrom: ['F2'],
         signal: 'Mandatory schema mapping overlay presented prior to interactive sandbox testing',
         severity: 'medium',
         evidence: 'Active modal obscures canvas view requiring technical database fields.',
@@ -61,16 +71,20 @@ export const sampleArtifactUnderstanding: ArtifactUnderstanding = {
     ],
     facts: [
       {
+        ref: 'F1',
         statement: 'Canvas UI presents a 5-step progress header with Step 3 labeled "Data Schema Mapping"',
         evidence: 'Observable step progress bar at top of layout with active step badge.',
       },
       {
+        ref: 'F2',
         statement: 'A modal dialog is active, requiring external integration fields before preview',
         evidence: 'Overlay container centered in viewport with input fields for webhook endpoints.',
       },
     ],
     inferences: [
       {
+        ref: 'I1',
+        derivedFrom: ['F1', 'F2'],
         statement: 'Users likely stall at Step 3 due to cognitive fatigue and missing IT/CRM credentials',
         reasoning: 'Schema configuration contains technical JSON payload and database mapping options.',
         confidence: 70,
@@ -78,6 +92,7 @@ export const sampleArtifactUnderstanding: ArtifactUnderstanding = {
     ],
     assumptions: [
       {
+        ref: 'P1',
         statement: 'Self-serve trial users have direct access to live production API credentials during onboarding',
         reason: 'Required integration fields appear before any sandbox mode or mock test option.',
         confidence: 60,
@@ -85,9 +100,12 @@ export const sampleArtifactUnderstanding: ArtifactUnderstanding = {
     ],
     unknowns: [
       {
+        ref: 'U1',
         question: 'What is the target Day-14 activation conversion benchmark or North Star metric?',
         whyItMatters: 'Determines whether 18% current completion represents an acute bottleneck or acceptable baseline.',
-        priority: 'high',
+        decisionImpact: 'high',
+        howToGetIt: 'One number from the activation dashboard, or the target written into the quarter plan.',
+        blocks: ['I1'],
       },
     ],
     contextAlignment: {

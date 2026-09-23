@@ -624,15 +624,15 @@ export const ArtifactUnderstandingCard: React.FC<ArtifactUnderstandingCardProps>
                         <div className="flex-1">
                           <div className="flex items-center justify-between gap-1">
                             <span className="font-medium leading-relaxed">{unk}</span>
-                            {!isEditing && detailedUnk?.priority && (
+                            {!isEditing && detailedUnk?.decisionImpact && (
                               <span
                                 className={`text-[10px] font-mono uppercase px-1.5 py-0.2 rounded shrink-0 ${
-                                  detailedUnk.priority === 'high'
+                                  detailedUnk.decisionImpact === 'high'
                                     ? 'bg-red-200 dark:bg-red-900/50 text-red-800 dark:text-red-200 font-bold'
                                     : 'bg-stone-200 dark:bg-stone-700 text-stone-700 dark:text-stone-300'
                                 }`}
                               >
-                                {detailedUnk.priority}
+                                {detailedUnk.decisionImpact}
                               </span>
                             )}
                           </div>

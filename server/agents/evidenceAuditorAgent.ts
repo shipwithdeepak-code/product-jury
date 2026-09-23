@@ -10,6 +10,7 @@ import { DecisionBudget } from '../integrity/budget';
 import { RunRecorder } from '../integrity/provenance';
 import { ProductJuryError } from '../integrity/errors';
 import { buildSuppliedContent } from './promptContext';
+import type { ClaimSpine } from '../claims/spine';
 
 const evidenceAuditorSchema = {
   type: Type.OBJECT,
@@ -95,6 +96,8 @@ AUDIT RULES:
 export interface RunEvidenceAuditorInput {
   context: ProductContext;
   artifactUnderstanding?: ArtifactUnderstanding;
+  /** Stage 2 · The run's Claim Spine, rebuilt once by the orchestrator. */
+  spine?: ClaimSpine | null;
   uxReview?: UXResearchResult;
   strategyReview?: ProductStrategyResult;
   rawEvidence?: string;
@@ -125,7 +128,9 @@ export async function runEvidenceAuditorAgent(
   const { context, artifactUnderstanding, uxReview, strategyReview, rawEvidence, budget, recorder } =
     input;
 
-  const supplied = buildSuppliedContent(context, rawEvidence, artifactUnderstanding);
+  const supplied = buildSuppliedContent(context, rawEvidence, artifactUnderstanding, {
+    spine: input.spine,
+  });
 
   const panelPositions = [
     uxReview

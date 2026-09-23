@@ -151,6 +151,8 @@ describe('11 · privacy disclosure', () => {
           unknowns: [],
           frictionSignals: [],
         },
+        // Stage 2: the client requires a reading to carry its claim spine.
+        understanding: { claimSpine: { version: 1, runId: 't', claims: [], openQuestions: [] } },
         observations: [],
       }),
     });

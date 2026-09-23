@@ -6,6 +6,7 @@ import { runProductJuryDeliberation } from './server/orchestrator';
 import { ProductJuryError, classifyProviderError, isProductJuryError } from './server/integrity/errors';
 import { DecisionBudget } from './server/integrity/budget';
 import { RunRecorder } from './server/integrity/provenance';
+import { projectUnderstanding } from './server/claims/specialistInput';
 import { PAYLOAD_LIMITS, boundedText } from './server/integrity/payload';
 import { rateLimit } from './server/integrity/rateLimit';
 import { sharedCounters, validateEvent, TelemetryEvent } from './server/integrity/telemetry';
@@ -85,7 +86,7 @@ async function startServer() {
       const { image, mimeType, fileName } = req.body ?? {};
       const boundedFileName = boundedText(fileName, 'fileName', 256, 'analyst');
 
-      const { analysis, observations } = await analyzeArtifactWithGemini({
+      const { analysis, observations, spine, originCoverage } = await analyzeArtifactWithGemini({
         imageBase64: image,
         mimeType,
         fileName: boundedFileName || undefined,
@@ -97,6 +98,13 @@ async function startServer() {
         success: true,
         outcome: 'VERDICT',
         data: analysis,
+        /*
+         * Stage 2 · The display projection is built here, from the spine, so
+         * there is one projection in the product rather than one on each side
+         * of the wire. The spine travels inside it.
+         */
+        understanding: projectUnderstanding(spine, analysis),
+        originCoverage,
         // SR-8: instructions found in the input travel to the client as
         // observations about the input.
         observations,

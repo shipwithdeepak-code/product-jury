@@ -4,6 +4,7 @@ import { DecisionBudget } from '../integrity/budget';
 import { RunRecorder } from '../integrity/provenance';
 import { ProductJuryError } from '../integrity/errors';
 import { buildSuppliedContent } from './promptContext';
+import type { ClaimSpine } from '../claims/spine';
 
 const uxResearcherSchema = {
   type: Type.OBJECT,
@@ -112,6 +113,8 @@ export interface RunUXResearcherInput {
   context: ProductContext;
   rawEvidence?: string;
   artifactUnderstanding?: ArtifactUnderstanding;
+  /** Stage 2 · The run's Claim Spine, rebuilt once by the orchestrator. */
+  spine?: ClaimSpine | null;
   budget: DecisionBudget;
   recorder: RunRecorder;
 }
@@ -130,7 +133,9 @@ export interface RunUXResearcherInput {
 export async function runUXResearcherAgent(input: RunUXResearcherInput): Promise<UXResearchResult> {
   const { context, rawEvidence, artifactUnderstanding, budget, recorder } = input;
 
-  const supplied = buildSuppliedContent(context, rawEvidence, artifactUnderstanding);
+  const supplied = buildSuppliedContent(context, rawEvidence, artifactUnderstanding, {
+    spine: input.spine,
+  });
 
   const promptText = `Evaluate this product experience from a rigorous UX research perspective.
 

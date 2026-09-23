@@ -4,6 +4,7 @@ import { DecisionBudget } from '../integrity/budget';
 import { RunRecorder } from '../integrity/provenance';
 import { ProductJuryError } from '../integrity/errors';
 import { buildSuppliedContent } from './promptContext';
+import type { ClaimSpine } from '../claims/spine';
 
 const productStrategistSchema = {
   type: Type.OBJECT,
@@ -114,6 +115,8 @@ export interface RunProductStrategistInput {
   context: ProductContext;
   rawEvidence?: string;
   artifactUnderstanding?: ArtifactUnderstanding;
+  /** Stage 2 · The run's Claim Spine, rebuilt once by the orchestrator. */
+  spine?: ClaimSpine | null;
   budget: DecisionBudget;
   recorder: RunRecorder;
 }
@@ -127,7 +130,9 @@ export async function runProductStrategistAgent(
 ): Promise<ProductStrategyResult> {
   const { context, rawEvidence, artifactUnderstanding, budget, recorder } = input;
 
-  const supplied = buildSuppliedContent(context, rawEvidence, artifactUnderstanding);
+  const supplied = buildSuppliedContent(context, rawEvidence, artifactUnderstanding, {
+    spine: input.spine,
+  });
 
   const promptText = `Evaluate this product initiative from a product strategy perspective.
 

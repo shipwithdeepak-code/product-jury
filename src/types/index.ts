@@ -1,41 +1,96 @@
 export type Verdict = 'SHIP' | 'ITERATE' | 'TEST' | 'KILL';
 
-export type EvidenceStatus = 'FACT' | 'INFERENCE' | 'ASSUMPTION' | 'UNKNOWN';
+export {
+  CORE_EPISTEMIC_STATUSES,
+  EPISTEMIC_STATUSES,
+  LOAD_BEARING_STATUSES,
+  ORIGIN_KINDS,
+} from './claims';
+export type {
+  Claim,
+  ClaimDependant,
+  ClaimId,
+  ClaimOrigin,
+  CoreEpistemicStatus,
+  EpistemicStatus,
+  LoadBearingStatus,
+  OpenQuestion,
+  OriginCoverage,
+  OriginKind,
+  SerializedClaimSpine,
+} from './claims';
 
-export interface DetailedAttribute {
+import type { CoreEpistemicStatus, OriginCoverage, SerializedClaimSpine } from './claims';
+
+/**
+ * The four kinds a PM sees. Stage 2 makes this an alias of the Claim Spine's
+ * core statuses rather than a second list, because two lists of the same four
+ * names is how the product ends up with two competing claim models.
+ */
+export type EvidenceStatus = CoreEpistemicStatus;
+
+/**
+ * Stage 2 · The analyst wire contract.
+ *
+ * Every statement now carries a model-local `ref` so that the model can say
+ * which statement another one rests on inside a single response. The refs are
+ * consumed by `server/claims/fromAnalyst.ts` and never survive it: downstream,
+ * statements are addressed by claim id.
+ */
+
+/** A short identifier the model mints for one statement, e.g. "F1". */
+export type AnalystRef = string;
+
+export interface AnalystAttribute {
+  ref: AnalystRef;
   value: string;
   confidence: number;
+  /** Why this reading of the artifact was reached. */
   evidence: string;
+  /** The observations it rests on. */
+  derivedFrom: AnalystRef[];
   confidenceType?: 'evidence' | 'inference';
 }
 
-export interface DetailedFrictionSignal {
+export interface AnalystFrictionSignal {
+  ref: AnalystRef;
   signal: string;
   severity: 'low' | 'medium' | 'high';
   evidence: string;
+  derivedFrom: AnalystRef[];
 }
 
-export interface DetailedFact {
+export interface AnalystFact {
+  ref: AnalystRef;
   statement: string;
   evidence: string;
 }
 
-export interface DetailedInference {
+export interface AnalystInference {
+  ref: AnalystRef;
   statement: string;
   reasoning: string;
+  derivedFrom: AnalystRef[];
   confidence: number;
 }
 
-export interface DetailedAssumption {
+export interface AnalystAssumption {
+  ref: AnalystRef;
   statement: string;
   reason: string;
   confidence: number;
 }
 
-export interface DetailedUnknown {
+export interface AnalystUnknown {
+  ref: AnalystRef;
   question: string;
   whyItMatters: string;
-  priority: 'low' | 'medium' | 'high';
+  /** CAP-02: how much answering it would move the decision. */
+  decisionImpact: 'low' | 'medium' | 'high';
+  /** FR-15 and CAP-07: the cheapest way to get it. */
+  howToGetIt?: string;
+  /** Statements this unknown undermines. */
+  blocks?: AnalystRef[];
 }
 
 export type AlignmentStatus = 'aligned' | 'partially_aligned' | 'conflict' | 'insufficient_evidence';
@@ -48,17 +103,26 @@ export interface ContextAlignment {
   needsClarification: boolean;
 }
 
-export interface ContextAnalysisResponse {
-  productType: DetailedAttribute;
-  likelyUser: DetailedAttribute;
-  primaryJourney: DetailedAttribute;
-  frictionSignals: DetailedFrictionSignal[];
-  facts: DetailedFact[];
-  inferences: DetailedInference[];
-  assumptions: DetailedAssumption[];
-  unknowns: DetailedUnknown[];
+export interface AnalystReading {
+  productType: AnalystAttribute;
+  likelyUser: AnalystAttribute;
+  primaryJourney: AnalystAttribute;
+  frictionSignals: AnalystFrictionSignal[];
+  facts: AnalystFact[];
+  inferences: AnalystInference[];
+  assumptions: AnalystAssumption[];
+  unknowns: AnalystUnknown[];
   contextAlignment?: ContextAlignment;
 }
+
+/** Legacy names, kept so Stage 1's display code needs no rewrite. */
+export type DetailedAttribute = AnalystAttribute;
+export type DetailedFrictionSignal = AnalystFrictionSignal;
+export type DetailedFact = AnalystFact;
+export type DetailedInference = AnalystInference;
+export type DetailedAssumption = AnalystAssumption;
+export type DetailedUnknown = AnalystUnknown;
+export type ContextAnalysisResponse = AnalystReading;
 
 export interface ArtifactUnderstanding {
   productType: string;
@@ -73,6 +137,16 @@ export interface ArtifactUnderstanding {
   isAnalyzedByGemini?: boolean;
   contextAlignment?: ContextAlignment;
   detailedAnalysis?: ContextAnalysisResponse;
+  /**
+   * Stage 2 · The Claim Spine for this reading.
+   *
+   * The arrays above are a display projection of it. This is the record: every
+   * statement with a stable id, its kind, its origin and what rests on it
+   * (CAP-03). It is serialisable so Stage 3's Decision object can hold it.
+   */
+  claimSpine?: SerializedClaimSpine;
+  /** CAP-03's origin-coverage measurement for this reading. */
+  originCoverage?: OriginCoverage;
 }
 
 export interface ProductContext {

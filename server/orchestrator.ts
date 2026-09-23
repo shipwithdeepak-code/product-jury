@@ -7,6 +7,10 @@ import { ProductJuryError, isProductJuryError } from './integrity/errors';
 import { DecisionBudget } from './integrity/budget';
 import { RunRecorder } from './integrity/provenance';
 import { RunOutcome, failed, verdict } from './integrity/outcome';
+import { ClaimSpine } from './claims/spine';
+import { spineFromUnderstanding } from './claims/specialistInput';
+import { addPmContextClaims } from './claims/fromContext';
+import { measureOriginCoverage } from './claims/originCoverage';
 
 /**
  * Stage 1 · The pipeline, rebuilt so that it can produce nothing.
@@ -35,6 +39,14 @@ import { RunOutcome, failed, verdict } from './integrity/outcome';
  * the binding ceiling (CAP-06's ceiling half). The stage list below records
  * `gate` and `cross_examination` as `not_run` with the reason, rather than
  * pretending the pipeline has six stages when it has four.
+ *
+ * Stage 2 adds one thing to this file: the run rebuilds the Claim Spine once,
+ * adds the PM's own statements to it, and passes it to every stage. All four
+ * agents therefore see the same statements under the same ids, which is what a
+ * later verdict citing one of them will depend on. The spine is rebuilt through
+ * `ClaimSpine.fromJSON`, which revalidates every claim and every reference, so
+ * a reading that came back from the browser altered fails the run rather than
+ * reaching a prompt.
  */
 
 export interface DeliberationOptions {
@@ -68,10 +80,48 @@ export async function runProductJuryDeliberation(
     const artifactUnderstanding = context.artifactUnderstanding;
     const contextAlignment = artifactUnderstanding?.contextAlignment;
 
+    /*
+     * CAP-03. One spine per run, built before any stage sees anything.
+     *
+     * A reading produced before Stage 2, or the bundled sample, carries no
+     * spine. That is not an error — it is a reading with no addressable
+     * statements, and the prompt builder falls back to the flattened view for
+     * it. What is an error is a spine that does not validate, which throws here
+     * and fails the run.
+     */
+    let spine: ClaimSpine | null = null;
+    try {
+      spine = spineFromUnderstanding(artifactUnderstanding);
+    } catch (error) {
+      throw new ProductJuryError('SCHEMA_VIOLATION', {
+        stage: 'analyst',
+        detail: {
+          violation:
+            'the artifact reading carried a claim spine that does not validate',
+        },
+        cause: error,
+      });
+    }
+
+    if (spine) {
+      // CAP-03: the PM's own words are statements too, and are filed as the
+      // PM's rather than promoted to observations.
+      addPmContextClaims(spine, context, rawEvidence);
+      const coverage = measureOriginCoverage(spine);
+      if (!coverage.passes) {
+        throw new ProductJuryError('SCHEMA_VIOLATION', {
+          stage: 'analyst',
+          detail: {
+            violation: `${coverage.uncovered.length} statements carry no usable origin`,
+          },
+        });
+      }
+    }
+
     // Phase 1 — the two lenses. Run in parallel; either failing fails the run.
     const [uxSettled, strategySettled] = await Promise.allSettled([
-      runUXResearcherAgent({ context, rawEvidence, artifactUnderstanding, budget, recorder }),
-      runProductStrategistAgent({ context, rawEvidence, artifactUnderstanding, budget, recorder }),
+      runUXResearcherAgent({ context, rawEvidence, artifactUnderstanding, spine, budget, recorder }),
+      runProductStrategistAgent({ context, rawEvidence, artifactUnderstanding, spine, budget, recorder }),
     ]);
 
     if (uxSettled.status === 'rejected' || strategySettled.status === 'rejected') {
@@ -96,6 +146,7 @@ export async function runProductJuryDeliberation(
     const evidenceAudit = await runEvidenceAuditorAgent({
       context,
       artifactUnderstanding,
+      spine,
       uxReview,
       strategyReview,
       rawEvidence,
@@ -107,6 +158,7 @@ export async function runProductJuryDeliberation(
     const review = await runJuryDecisionAgent({
       context,
       artifactUnderstanding,
+      spine,
       contextAlignment,
       uxReview,
       strategyReview,
