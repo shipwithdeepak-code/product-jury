@@ -1,5 +1,6 @@
 import React, { useRef, useState } from 'react';
-import { ProductContext, ArtifactUnderstanding } from '../types';
+import { ProductContext, ArtifactUnderstanding, DecisionQuestionOffer } from '../types';
+import type { EditDistanceBand } from '../integrity/decisionQuestion';
 import {
   Upload,
   Link2,
@@ -25,9 +26,9 @@ import {
 import {
   sampleProductContext,
   sampleRawEvidence,
-  createDefaultArtifactUnderstanding,
 } from '../data/sampleReview';
 import { ArtifactUnderstandingCard } from './ArtifactUnderstandingCard';
+import { DecisionQuestionCard } from './DecisionQuestionCard';
 import { ContextAlignmentCard } from './ContextAlignmentCard';
 import { analyzeArtifactViaServer, compareContextViaServer } from '../services/contextAnalystClient';
 import { SAMPLE_PRESETS, SamplePreset } from '../utils/sampleImageGenerator';
@@ -42,6 +43,21 @@ interface WorkspaceFormProps {
   isLoading: boolean;
   onPreloadSample: () => void;
   onResetWorkspace?: () => void;
+  /**
+   * Stage 4 · CAP-04. The wording the PM has confirmed, held by the app rather
+   * than by this form, and deliberately not part of `context`: the question
+   * identifies the decision, not the product.
+   */
+  decisionQuestion: string | null;
+  onConfirmDecisionQuestion: (question: string, band: EditDistanceBand) => void;
+  /** §55: `question_proposed`, emitted when a proposal actually arrives. */
+  onQuestionProposed: () => void;
+  /**
+   * PR-1 (launch blocker). Every path that is about to send an artifact to the
+   * provider goes through this first. It calls back once this browser has been
+   * told where the artifact goes, and never calls back if the PM declines.
+   */
+  requestUploadConsent: (proceed: () => void) => void;
 }
 
 export const WorkspaceForm: React.FC<WorkspaceFormProps> = ({
@@ -53,6 +69,10 @@ export const WorkspaceForm: React.FC<WorkspaceFormProps> = ({
   isLoading,
   onPreloadSample,
   onResetWorkspace,
+  decisionQuestion,
+  onConfirmDecisionQuestion,
+  onQuestionProposed,
+  requestUploadConsent,
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const contextSectionRef = useRef<HTMLDivElement>(null);
@@ -60,9 +80,16 @@ export const WorkspaceForm: React.FC<WorkspaceFormProps> = ({
   const [validationError, setValidationError] = useState<string | null>(null);
   const [isAnalyzingArtifact, setIsAnalyzingArtifact] = useState(false);
   const [artifactAnalysisError, setArtifactAnalysisError] = useState<string | null>(null);
+  const [embeddedInstructionNotice, setEmbeddedInstructionNotice] = useState<string | null>(null);
   const [isComparingContext, setIsComparingContext] = useState(false);
   const [contextComparisonError, setContextComparisonError] = useState<string | null>(null);
   const [compareSuccessStatus, setCompareSuccessStatus] = useState<string | null>(null);
+  /*
+   * CAP-04. What the analyst step said about the decision question: a proposal,
+   * or the honest absence of one. `null` means no artifact has been read yet,
+   * which is a third state and not a failure.
+   */
+  const [questionOffer, setQuestionOffer] = useState<DecisionQuestionOffer | null>(null);
   const [userEditedFields, setUserEditedFields] = useState<{
     name?: boolean;
     whatBuilding?: boolean;
@@ -71,22 +98,37 @@ export const WorkspaceForm: React.FC<WorkspaceFormProps> = ({
 
   const hasArtifact = Boolean(context.screenshotUrl || (context.productUrl && context.productUrl.trim().length > 3));
   const hasEnteredProductContext = Boolean(context.additionalContext?.trim());
-  const currentUnderstanding: ArtifactUnderstanding =
-    context.artifactUnderstanding ||
-    createDefaultArtifactUnderstanding(context.screenshotName, context.productUrl);
+  /*
+   * Stage 1 \u00b7 CAP-01 failure state, \u00a751 never-1.
+   *
+   * This used to fall back to createDefaultArtifactUnderstanding(), which built
+   * a reading out of the file name and the URL whenever a real one was absent.
+   * An absent reading is now absent: the understanding card is not rendered and
+   * the failure is stated instead.
+   */
+  const currentUnderstanding: ArtifactUnderstanding | undefined = context.artifactUnderstanding;
 
-  const analyzeImage = async (
+  const analyzeImage = (dataUrl: string, fileName?: string, mimeType?: string) => {
+    // PR-1: the disclosure precedes the first upload, not the first result.
+    requestUploadConsent(() => {
+      void runArtifactAnalysis(dataUrl, fileName, mimeType);
+    });
+  };
+
+  const runArtifactAnalysis = async (
     dataUrl: string,
     fileName?: string,
     mimeType?: string
   ) => {
     setIsAnalyzingArtifact(true);
     setArtifactAnalysisError(null);
+    setEmbeddedInstructionNotice(null);
     setContextComparisonError(null);
     setCompareSuccessStatus(null);
     setIsComparingContext(false);
     setValidationError(null);
     setUserEditedFields({});
+    setQuestionOffer(null);
 
     // Reset file input element so re-uploading works smoothly
     if (fileInputRef.current) {
@@ -116,11 +158,32 @@ export const WorkspaceForm: React.FC<WorkspaceFormProps> = ({
 
     try {
       const detectedMime = mimeType || (dataUrl.startsWith('data:image/jpeg') ? 'image/jpeg' : 'image/png');
-      const analysisResult = await analyzeArtifactViaServer(
+      const { understanding, observations, decisionQuestion: offer } = await analyzeArtifactViaServer(
         dataUrl,
         fileName || 'artifact.png',
         detectedMime
       );
+
+      /*
+       * SR-8. Instructions found inside the artifact are recorded and shown,
+       * never obeyed. The server has already treated the artifact as data; this
+       * is the disclosure half of the same requirement.
+       */
+      setEmbeddedInstructionNotice(
+        observations.length > 0
+          ? `This artifact contains text that reads as an instruction (${observations
+              .map((o) => o.kind)
+              .join(', ')}). It was treated as content to judge, not as a direction to follow.`
+          : null
+      );
+
+      /*
+       * CAP-04 behaviour 1. The proposal arrives with the reading, because it
+       * is read off the same statements. It is held, not applied: nothing is
+       * confirmed until the PM confirms it.
+       */
+      setQuestionOffer(offer);
+      if (offer.proposal) onQuestionProposed();
 
       // Successfully received visual-only understanding
       // Keep contextAlignment undefined - do NOT run context alignment during visual analysis
@@ -130,24 +193,30 @@ export const WorkspaceForm: React.FC<WorkspaceFormProps> = ({
         name: cleanProductName,
         additionalContext: '', // Ensure context remains empty for the new review
         artifactUnderstanding: {
-          ...analysisResult,
+          ...understanding,
           contextAlignment: undefined,
         },
-        whatBuilding: analysisResult.detectedJourney,
-        targetUser: analysisResult.likelyUser,
+        whatBuilding: understanding.detectedJourney,
+        targetUser: understanding.likelyUser,
       });
       setValidationError(null);
     } catch (err: any) {
       console.warn('Gemini multimodal visual analysis error:', err);
       const rawMsg = err.message || 'Gemini analysis encountered a temporary issue. You can retry or edit manually.';
       setArtifactAnalysisError(rawMsg);
-      // Fallback understanding for the new artifact
+      /*
+       * CAP-01 failure state: "If the artifact cannot be read, the product says
+       * so, gives the real reason, and offers a retry. It never shows an
+       * understanding it did not derive, and it never guesses from a filename."
+       *
+       * The screenshot is kept so the retry has something to retry with. The
+       * reading stays undefined.
+       */
       onChangeContext({
         screenshotUrl: dataUrl,
         screenshotName: fileName || 'artifact.png',
-        name: cleanProductName,
         additionalContext: '',
-        artifactUnderstanding: createDefaultArtifactUnderstanding(fileName, undefined),
+        artifactUnderstanding: undefined,
       });
     } finally {
       setIsAnalyzingArtifact(false);
@@ -203,10 +272,17 @@ export const WorkspaceForm: React.FC<WorkspaceFormProps> = ({
         visualFindings
       );
 
-      const baseUnderstanding = context.artifactUnderstanding || createDefaultArtifactUnderstanding(context.screenshotName, context.productUrl);
+      // An alignment belongs to a reading. Without one there is nothing to
+      // attach it to, and inventing the reading is what \u00a751 forbids.
+      if (!context.artifactUnderstanding) {
+        setContextComparisonError(
+          'There is no artifact reading to attach this comparison to. Read the artifact first.'
+        );
+        return;
+      }
       onChangeContext({
         artifactUnderstanding: {
-          ...baseUnderstanding,
+          ...context.artifactUnderstanding,
           contextAlignment: alignment,
         },
       });
@@ -258,13 +334,13 @@ export const WorkspaceForm: React.FC<WorkspaceFormProps> = ({
     if (derived.whatBuilding && !userEditedFields.whatBuilding) {
       updates.whatBuilding = derived.whatBuilding;
     } else if (!newVal.trim() && !userEditedFields.whatBuilding) {
-      updates.whatBuilding = currentUnderstanding.detectedJourney || '';
+      updates.whatBuilding = currentUnderstanding?.detectedJourney || '';
     }
 
     if (derived.targetUser && !userEditedFields.targetUser) {
       updates.targetUser = derived.targetUser;
     } else if (!newVal.trim() && !userEditedFields.targetUser) {
-      updates.targetUser = currentUnderstanding.likelyUser || '';
+      updates.targetUser = currentUnderstanding?.likelyUser || '';
     }
 
     if (derived.productName && !userEditedFields.name) {
@@ -283,6 +359,16 @@ export const WorkspaceForm: React.FC<WorkspaceFormProps> = ({
   };
 
   const handleConfirmUnderstanding = () => {
+    /*
+     * There is nothing to confirm without a reading. Confirming an absent one
+     * is how the old default reading entered the record (§51 never-1).
+     */
+    if (!currentUnderstanding) {
+      setValidationError(
+        'There is no artifact reading to confirm yet. Read the artifact first, or retry if the read failed.'
+      );
+      return;
+    }
     const updated = {
       ...currentUnderstanding,
       isConfirmed: true,
@@ -327,6 +413,7 @@ export const WorkspaceForm: React.FC<WorkspaceFormProps> = ({
     setCompareSuccessStatus(null);
     setValidationError(null);
     setUserEditedFields({});
+    setQuestionOffer(null);
 
     // Reset all review context to clean initial empty state
     onChangeContext({
@@ -354,7 +441,14 @@ export const WorkspaceForm: React.FC<WorkspaceFormProps> = ({
       return;
     }
 
-    if (!currentUnderstanding.isConfirmed) {
+    if (!currentUnderstanding) {
+      setValidationError(
+        'The artifact has not been read yet, so there is nothing for the panel to judge. Retry the read above.'
+      );
+      return;
+    }
+
+    if (!currentUnderstanding?.isConfirmed) {
       setValidationError('Please confirm or refine the artifact understanding above before running the jury.');
       return;
     }
@@ -369,6 +463,18 @@ export const WorkspaceForm: React.FC<WorkspaceFormProps> = ({
     }
     if (!context.primaryGoal?.trim()) {
       setValidationError('Please specify the primary product or business goal.');
+      return;
+    }
+
+    /*
+     * CAP-04: "Required — no verdict is possible without it." The panel is not
+     * asked to judge an unstated call.
+     */
+    if (!decisionQuestion?.trim()) {
+      setValidationError(
+        'Confirm the decision question above. The panel answers the call you are making, so it ' +
+          'cannot run without one.'
+      );
       return;
     }
     setValidationError(null);
@@ -431,19 +537,19 @@ export const WorkspaceForm: React.FC<WorkspaceFormProps> = ({
             className={`p-3 rounded-lg border text-xs flex items-center gap-3 transition-colors ${
               !hasArtifact
                 ? 'opacity-40 border-stone-200 dark:border-stone-800 text-stone-500'
-                : !currentUnderstanding.isConfirmed
+                : !currentUnderstanding?.isConfirmed
                 ? 'bg-stone-900 dark:bg-stone-100 border-transparent text-white dark:text-stone-900 font-semibold shadow-xs'
                 : 'bg-stone-50 dark:bg-stone-900 border-stone-300 dark:border-stone-700 text-stone-900 dark:text-stone-100 font-medium'
             }`}
           >
             <div
               className={`w-6 h-6 rounded-full flex items-center justify-center font-mono text-xs ${
-                currentUnderstanding.isConfirmed
+                currentUnderstanding?.isConfirmed
                   ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
                   : 'bg-stone-200 dark:bg-stone-800 text-stone-700 dark:text-stone-300'
               }`}
             >
-              {currentUnderstanding.isConfirmed ? <Check className="w-3.5 h-3.5" /> : '2'}
+              {currentUnderstanding?.isConfirmed ? <Check className="w-3.5 h-3.5" /> : '2'}
             </div>
             <div>
               <div className="font-mono text-[10px] uppercase tracking-wider opacity-75">Step 2</div>
@@ -453,14 +559,14 @@ export const WorkspaceForm: React.FC<WorkspaceFormProps> = ({
 
           <div
             className={`p-3 rounded-lg border text-xs flex items-center gap-3 transition-colors ${
-              !currentUnderstanding.isConfirmed
+              !currentUnderstanding?.isConfirmed
                 ? 'opacity-40 border-stone-200 dark:border-stone-800 text-stone-500'
                 : 'bg-stone-900 dark:bg-stone-100 border-transparent text-white dark:text-stone-900 font-semibold shadow-xs'
             }`}
           >
             <div
               className={`w-6 h-6 rounded-full flex items-center justify-center font-mono text-xs ${
-                currentUnderstanding.isConfirmed
+                currentUnderstanding?.isConfirmed
                   ? 'bg-white/20 text-white dark:bg-stone-800 dark:text-white'
                   : 'bg-stone-200 dark:bg-stone-800 text-stone-700 dark:text-stone-300'
               }`}
@@ -637,14 +743,10 @@ export const WorkspaceForm: React.FC<WorkspaceFormProps> = ({
                   placeholder="https://app.yourproduct.com/onboarding or staging wizard URL"
                   value={context.productUrl || ''}
                   onChange={(e) => {
-                    const val = e.target.value;
-                    onChangeContext({ productUrl: val });
-                    if (!context.artifactUnderstanding && val.trim().length > 10) {
-                      onChangeContext({
-                        productUrl: val,
-                        artifactUnderstanding: createDefaultArtifactUnderstanding(undefined, val),
-                      });
-                    }
+                    // A URL the product has not fetched establishes nothing, so
+                    // typing one no longer produces an artifact reading
+                    // (\u00a751 never-1; \u00a747 rules out fetching it).
+                    onChangeContext({ productUrl: e.target.value });
                   }}
                   className="w-full pl-9 pr-4 py-2 text-sm bg-stone-50 dark:bg-stone-800/50 border border-stone-200 dark:border-stone-700 rounded-lg text-stone-900 dark:text-stone-100 placeholder-stone-400 focus:outline-none focus:ring-1 focus:ring-stone-900 dark:focus:ring-stone-400"
                 />
@@ -717,18 +819,76 @@ export const WorkspaceForm: React.FC<WorkspaceFormProps> = ({
         {/* STEP 2: Gemini Artifact Understanding & Context Alignment */}
         {hasArtifact ? (
           <section className="space-y-4">
-            <ArtifactUnderstandingCard
-              understanding={currentUnderstanding}
-              onConfirm={handleConfirmUnderstanding}
-              onUpdate={handleUpdateUnderstanding}
-              screenshotUrl={context.screenshotUrl}
-              screenshotName={context.screenshotName}
-              productUrl={context.productUrl}
-              onResetArtifact={handleRemoveArtifact}
-              isAnalyzing={isAnalyzingArtifact}
-              analysisError={artifactAnalysisError}
-              onRetryAnalysis={handleRetryAnalysis}
-            />
+            {/* SR-8: what the artifact tried to tell the model, reported rather than followed. */}
+            {embeddedInstructionNotice && (
+              <div className="p-3.5 rounded-lg bg-stone-100 dark:bg-stone-800/60 border border-stone-300 dark:border-stone-700 text-xs text-stone-700 dark:text-stone-300 flex items-start gap-2.5">
+                <Info className="w-4 h-4 text-stone-500 shrink-0 mt-0.5" aria-hidden="true" />
+                <span>{embeddedInstructionNotice}</span>
+              </div>
+            )}
+
+            {currentUnderstanding ? (
+              <ArtifactUnderstandingCard
+                understanding={currentUnderstanding}
+                onConfirm={handleConfirmUnderstanding}
+                onUpdate={handleUpdateUnderstanding}
+                screenshotUrl={context.screenshotUrl}
+                screenshotName={context.screenshotName}
+                productUrl={context.productUrl}
+                onResetArtifact={handleRemoveArtifact}
+                isAnalyzing={isAnalyzingArtifact}
+                analysisError={artifactAnalysisError}
+                onRetryAnalysis={handleRetryAnalysis}
+              />
+            ) : (
+              /*
+               * CAP-01 failure state. There is no reading, so none is drawn.
+               * The card used to be rendered against a default understanding
+               * assembled from the file name, which is the fabrication the
+               * audit found first.
+               */
+              <div className="p-6 rounded-xl border border-stone-200 dark:border-stone-800 bg-white dark:bg-stone-900 space-y-3">
+                <div className="flex items-start gap-3">
+                  {isAnalyzingArtifact ? (
+                    <Loader2 className="w-5 h-5 text-amber-500 animate-spin shrink-0 mt-0.5" aria-hidden="true" />
+                  ) : (
+                    <FileQuestion className="w-5 h-5 text-stone-400 shrink-0 mt-0.5" aria-hidden="true" />
+                  )}
+                  <div className="space-y-1">
+                    <h3 className="text-sm font-semibold text-stone-900 dark:text-stone-100">
+                      {isAnalyzingArtifact
+                        ? 'Reading the artifact'
+                        : artifactAnalysisError
+                        ? 'The artifact was not read'
+                        : 'No reading yet'}
+                    </h3>
+                    <p className="text-xs text-stone-600 dark:text-stone-400 leading-relaxed">
+                      {isAnalyzingArtifact
+                        ? 'Nothing is shown until the read returns.'
+                        : artifactAnalysisError
+                        ? artifactAnalysisError
+                        : 'Upload a screen, or provide one of the sample screens above, to have it read.'}
+                    </p>
+                    {!isAnalyzingArtifact && artifactAnalysisError && (
+                      <p className="text-xs text-stone-500 dark:text-stone-400 leading-relaxed">
+                        Nothing was inferred from the file name in its place, and no understanding is
+                        shown that the read did not produce.
+                      </p>
+                    )}
+                  </div>
+                </div>
+                {!isAnalyzingArtifact && context.screenshotUrl && (
+                  <button
+                    type="button"
+                    onClick={handleRetryAnalysis}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold rounded-lg bg-stone-900 hover:bg-stone-800 text-white dark:bg-stone-100 dark:text-stone-900 dark:hover:bg-white transition-colors cursor-pointer"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                    <span>Read it again</span>
+                  </button>
+                )}
+              </div>
+            )}
 
             <ContextAlignmentCard
               hasArtifact={Boolean(context.screenshotUrl)}
@@ -760,10 +920,23 @@ export const WorkspaceForm: React.FC<WorkspaceFormProps> = ({
           </div>
         )}
 
+        {/*
+          CAP-04's trigger: after understanding, before any judgement. It sits
+          between the confirmed reading and the context questions for exactly
+          that reason.
+        */}
+        {hasArtifact && currentUnderstanding?.isConfirmed && (
+          <DecisionQuestionCard
+            offer={questionOffer}
+            confirmed={decisionQuestion}
+            onConfirm={onConfirmDecisionQuestion}
+          />
+        )}
+
         {/* STEP 3: Missing Critical Context */}
         {hasArtifact && (
           <div ref={contextSectionRef}>
-            {currentUnderstanding.isConfirmed ? (
+            {currentUnderstanding?.isConfirmed ? (
               /* Unlocked Critical Context Form */
               <section className="bg-white dark:bg-stone-900 rounded-xl border border-stone-200 dark:border-stone-800 p-6 shadow-xs space-y-6 transition-all">
                 <div className="flex items-center justify-between pb-4 border-b border-stone-100 dark:border-stone-800">
@@ -1030,15 +1203,26 @@ export const WorkspaceForm: React.FC<WorkspaceFormProps> = ({
         {/* Primary CTA Bar */}
         <div className="pt-2 flex flex-col sm:flex-row items-center justify-between gap-4 border-t border-stone-200 dark:border-stone-800">
           <div className="text-xs text-stone-500 dark:text-stone-400 flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+            <span className="w-2 h-2 rounded-full bg-stone-400" />
             <span>
-              Specialist Jury Panel ready: <span className="font-semibold text-stone-700 dark:text-stone-300">UX Researcher</span>, <span className="font-semibold text-stone-700 dark:text-stone-300">Product Manager</span>, <span className="font-semibold text-stone-700 dark:text-stone-300">Design Critic</span>.
+              {/*
+                Stage 1 · The Design Critic was named here and never ran: no
+                agent, no prompt, no output. Naming a panelist the product does
+                not have is the roster version of a fabricated review
+                (§51 never-2). Two specialists exist, so two are named.
+              */}
+              Panel: <span className="font-semibold text-stone-700 dark:text-stone-300">UX Researcher</span> and <span className="font-semibold text-stone-700 dark:text-stone-300">Product Manager</span>, with an evidence audit and a jury chair.
             </span>
           </div>
 
           <button
             type="submit"
-            disabled={isLoading || !hasArtifact || !currentUnderstanding.isConfirmed}
+            disabled={
+              isLoading ||
+              !hasArtifact ||
+              !currentUnderstanding?.isConfirmed ||
+              !decisionQuestion?.trim()
+            }
             className="w-full sm:w-auto inline-flex items-center justify-center gap-2.5 px-6 py-3 rounded-lg text-sm font-semibold tracking-wide bg-stone-900 hover:bg-stone-800 text-white dark:bg-stone-100 dark:text-stone-900 dark:hover:bg-white shadow-sm transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
           >
             {isLoading ? (

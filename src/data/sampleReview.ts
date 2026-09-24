@@ -1,149 +1,20 @@
-import { ProductReview, ProductContext, ArtifactUnderstanding } from '../types';
+import { ProductReview, ProductContext } from '../types';
+import { sampleArtifactUnderstanding } from './sampleArtifactUnderstanding';
 
-export const sampleArtifactUnderstanding: ArtifactUnderstanding = {
-  productType: 'B2B SaaS / Interactive Workflow Canvas & Onboarding Automation',
-  likelyUser: 'Mid-market RevOps Managers, Growth Product Managers, and Lifecycle Marketers',
-  detectedJourney: 'Multi-step onboarding sequence setup & first-mile webhook configuration',
-  frictionSignals: [
-    'Competing visual prominence between primary "Deploy Journey" action and auxiliary tools',
-    'Mandatory schema mapping overlay presented prior to interactive sandbox testing',
-    'Dense configuration drawer with ambiguous trigger draft / live status indicators',
-  ],
-  facts: [
-    'Canvas UI presents a 5-step progress header with Step 3 labeled "Data Schema Mapping"',
-    'A modal dialog is active, requiring at least 4 external integration fields before preview',
-    'Action toolbar displays 4 equally weighted grey buttons alongside 1 dark primary CTA',
-  ],
-  inferences: [
-    'Users likely stall at Step 3 due to cognitive fatigue and missing IT/CRM credentials',
-    'Workflow prioritizes exhaustive technical setup over rapid initial time-to-value payoff',
-  ],
-  assumptions: [
-    'Self-serve trial users have direct access to live production API credentials during onboarding',
-    'Users prefer configuring complex branching rules over standard linear starter templates',
-  ],
-  unknowns: [
-    'Target day-14 activation conversion rate or North Star business objective',
-    'Specific qualitative complaints and feedback from churned user cohorts',
-    'Funnel completion rates and drop-off analytics across steps 1 through 5',
-  ],
-  isConfirmed: false,
-  detailedAnalysis: {
-    productType: {
-      value: 'B2B SaaS / Interactive Workflow Canvas & Onboarding Automation',
-      confidence: 92,
-      evidence: 'Observable visual canvas containing node trees, trigger cards, and pipeline headers.',
-      confidenceType: 'evidence',
-    },
-    likelyUser: {
-      value: 'Mid-market RevOps Managers, Growth Product Managers, and Lifecycle Marketers',
-      confidence: 72,
-      evidence: 'Deduced from workflow automation nodes, webhook configurations, and campaign triggers.',
-      confidenceType: 'inference',
-    },
-    primaryJourney: {
-      value: 'Multi-step onboarding sequence setup & first-mile webhook configuration',
-      confidence: 78,
-      evidence: 'Step-progress indicator showing journey sequence from source trigger to deploy.',
-      confidenceType: 'inference',
-    },
-    frictionSignals: [
-      {
-        signal: 'Competing visual prominence between primary "Deploy Journey" action and auxiliary tools',
-        severity: 'high',
-        evidence: 'Primary CTA shares identical vertical line with four utility tool icons.',
-      },
-      {
-        signal: 'Mandatory schema mapping overlay presented prior to interactive sandbox testing',
-        severity: 'medium',
-        evidence: 'Active modal obscures canvas view requiring technical database fields.',
-      },
-    ],
-    facts: [
-      {
-        statement: 'Canvas UI presents a 5-step progress header with Step 3 labeled "Data Schema Mapping"',
-        evidence: 'Observable step progress bar at top of layout with active step badge.',
-      },
-      {
-        statement: 'A modal dialog is active, requiring external integration fields before preview',
-        evidence: 'Overlay container centered in viewport with input fields for webhook endpoints.',
-      },
-    ],
-    inferences: [
-      {
-        statement: 'Users likely stall at Step 3 due to cognitive fatigue and missing IT/CRM credentials',
-        reasoning: 'Schema configuration contains technical JSON payload and database mapping options.',
-        confidence: 70,
-      },
-    ],
-    assumptions: [
-      {
-        statement: 'Self-serve trial users have direct access to live production API credentials during onboarding',
-        reason: 'Required integration fields appear before any sandbox mode or mock test option.',
-        confidence: 60,
-      },
-    ],
-    unknowns: [
-      {
-        question: 'What is the target Day-14 activation conversion benchmark or North Star metric?',
-        whyItMatters: 'Determines whether 18% current completion represents an acute bottleneck or acceptable baseline.',
-        priority: 'high',
-      },
-    ],
-    contextAlignment: {
-      status: 'aligned',
-      summary:
-        'The visual canvas interface with nodes, triggers, and action sequence headers directly aligns with an onboarding journey workflow automation builder.',
-      visualEvidence:
-        'Observable multi-step progress indicators, node connector ports, and automation webhook trigger forms on the canvas.',
-      contextClaim:
-        'A drag-and-drop workflow canvas for Revenue Operations and Lifecycle Marketing teams to orchestrate multi-channel onboarding sequences.',
-      needsClarification: false,
-    },
-  },
-  contextAlignment: {
-    status: 'aligned',
-    summary:
-      'The visual canvas interface with nodes, triggers, and action sequence headers directly aligns with an onboarding journey workflow automation builder.',
-    visualEvidence:
-      'Observable multi-step progress indicators, node connector ports, and automation webhook trigger forms on the canvas.',
-    contextClaim:
-      'A drag-and-drop workflow canvas for Revenue Operations and Lifecycle Marketing teams to orchestrate multi-channel onboarding sequences.',
-    needsClarification: false,
-  },
-};
+export { sampleArtifactUnderstanding };
 
-export function createDefaultArtifactUnderstanding(screenshotName?: string, url?: string): ArtifactUnderstanding {
-  return {
-    productType: url ? 'Web Application / Digital Product Interface' : 'Application Screen / Interactive Flow',
-    likelyUser: 'Product end-users and primary domain practitioners',
-    detectedJourney: 'User onboarding, key functional task, or conversion sequence',
-    frictionSignals: [
-      'Visual hierarchy competition between primary conversion CTA and secondary links',
-      'Cognitive density in configuration and data input fields',
-      'Unclear affordance on next step requirements and prerequisite tasks',
-    ],
-    facts: [
-      `Artifact source: ${screenshotName || url || 'Uploaded visual artifact'}`,
-      'Interactive form elements and navigational chrome present in layout',
-      'Single-viewport workflow requiring user decision to proceed',
-    ],
-    inferences: [
-      'Users may experience decision paralysis if prerequisites are not clearly separated',
-      'The experience assumes familiarity with domain terminology',
-    ],
-    assumptions: [
-      'Target user has necessary context or credentials before reaching this screen',
-      'The user is motivated to complete the full sequence in a single session',
-    ],
-    unknowns: [
-      'Target business metrics (e.g. Day-14 activation rate or conversion baseline)',
-      'Specific qualitative user feedback or support ticket themes',
-      'Quantitative drop-off funnel telemetry across steps',
-    ],
-    isConfirmed: false,
-  };
-}
+/*
+ * Stage 1 \u00b7 createDefaultArtifactUnderstanding() is deleted.
+ *
+ * It returned a complete artifact reading \u2014 product type, likely user,
+ * detected journey, three friction signals, three "facts" including the file
+ * name, two inferences, two assumptions and three unknowns \u2014 built from
+ * nothing but a file name and a URL. Four call sites used it, and none of them
+ * labelled the result. CAP-01's failure state forbids it in so many words, and
+ * \u00a751 never-1 forbids the whole class.
+ *
+ * There is no replacement. An artifact that could not be read has no reading.
+ */
 
 export const sampleProductContext: ProductContext = {
   name: 'FlowPilot (Customer Journey Automations)',
@@ -170,6 +41,28 @@ export const sampleRawEvidence = `User Research & Data Log:
 - Hotjar heatmaps show 48% of clicks occur on secondary documentation links rather than the primary "Activate Workflow" button.
 - Support tickets: 14 tickets this month asking "Why is my test trigger grayed out?".
 - No production event instrumentation currently exists for time-to-first-webhook response.`;
+
+/**
+ * Stage 3 · TR-8. The question the demonstration decision answers.
+ *
+ * A Decision is identified by its question (§17, FR-4b), and `ProductReview`
+ * has never had one because CAP-04 — the capability that proposes it and has
+ * the PM confirm it — is not built. The bundled sample needs one in order to
+ * exist as a canonical Decision, so it is written here as sample content,
+ * labelled like everything else in this file, rather than composed at runtime
+ * out of the product name and the primary goal.
+ */
+export const sampleDecisionQuestion =
+  'Should we redesign the FlowPilot onboarding wizard before the Q4 activation push, or ship the current canvas and instrument it first?';
+
+/**
+ * Stage 3 · The moment the demonstration decision is pinned to.
+ *
+ * `sampleProductReview.timestamp` is `new Date()`, which makes the sample a
+ * different object on every import. A Decision has a created time that its
+ * event log is ordered by, so the sample needs a fixed one.
+ */
+export const SAMPLE_DECISION_AT = '2026-09-22T00:00:00.000Z';
 
 export const sampleProductReview: ProductReview = {
   id: 'rev-sample-flowpilot-01',
@@ -296,5 +189,5 @@ export const sampleProductReview: ProductReview = {
   },
   recommendedNextStep:
     'Run a 5-user usability test focused on first-session activation before redesigning the onboarding flow.',
-  isMock: true,
+  isSample: true,
 };
